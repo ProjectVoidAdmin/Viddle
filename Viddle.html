@@ -239,14 +239,36 @@ if (window.visualViewport) {
 // Small model chosen for phone RAM/VRAM limits. Swap for a bigger one later if the device handles it.
 // Pulls weights and WASM straight from MLC's own hosting — no bucket, no custom config needed.
 const MODEL_ID = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
+// True hard ceiling — the final reply will never exceed this many
+// characters. To still land on a complete sentence, we let raw generation
+// run a bit past this internally (GENERATION_HEADROOM_CHARS) purely so we
+// can detect the overshoot, then roll the visible reply back to the last
+// sentence that finished *within* MAX_REPLY_CHARS — never past it.
 const MAX_REPLY_CHARS = 500;
+const GENERATION_HEADROOM_CHARS = 150;
 // Llama's tokenizer averages roughly 4 characters per token for English
 // text (varies with punctuation/rare words, but this is the standard rule
-// of thumb). Deriving the token backstop from the char cap this way means
-// they always move together — no more risk of one being looser than the
-// other after a tweak to just one of them.
+// of thumb). Deriving the token backstop from the char budget this way
+// means they always move together — no more risk of one being looser than
+// the other after a tweak to just one of them.
 const CHARS_PER_TOKEN_ESTIMATE = 4;
-const MAX_REPLY_TOKENS = Math.ceil(MAX_REPLY_CHARS / CHARS_PER_TOKEN_ESTIMATE);
+const MAX_REPLY_TOKENS = Math.ceil((MAX_REPLY_CHARS + GENERATION_HEADROOM_CHARS) / CHARS_PER_TOKEN_ESTIMATE);
+
+// Finds the end of the *last* complete sentence in `text` whose end index
+// is at or before `maxLen` — i.e. the last '.', '!', '?', or '…'
+// (optionally followed by a closing quote/paren) that's followed by
+// whitespace or end-of-string, and still fits the budget. Returns -1 if no
+// sentence completes within budget at all (e.g. one long run-on).
+function findLastSentenceEndWithin(text, maxLen){
+  const re = /[.!?…]["'”’)\]]?(?=\s|$)/g;
+  let match, last = -1;
+  while ((match = re.exec(text))) {
+    const endIdx = match.index + match[0].length;
+    if (endIdx > maxLen) break; // matches only move forward, so nothing further will fit either
+    last = endIdx;
+  }
+  return last;
+}
 
 // Long-term memory: rather than resending the whole growing chat transcript
 // every turn (which is what tanks performance on a 1B on-device model), we
@@ -268,11 +290,14 @@ let isLoadingModel = false;
 let isCondensingMemory = false;
 let needsReloadOnResume = false;
 
-// What actually gets sent to the model each turn: the distilled facts (if
-// any) as a system message, followed by only the recent messages — never
-// the full history.
+// What actually gets sent to the model each turn: a brevity/completeness
+// instruction, the distilled facts (if any), then only the recent messages
+// — never the full history.
 function buildRequestMessages(){
-  const msgs = [];
+  const msgs = [{
+    role: 'system',
+    content: `Keep replies concise, ideally well under ${MAX_REPLY_CHARS} characters, and always finish as a complete, self-contained thought — never trail off mid-sentence.`
+  }];
   if (memoryFacts.length) {
     msgs.push({
       role: 'system',
@@ -514,6 +539,61 @@ function init(){
   return loadModel(false);
 }
 
+// Streams a completion into aiDiv. MAX_REPLY_CHARS is a true ceiling — the
+// returned text will never exceed it. Generation is allowed to run a bit
+// past that ceiling internally (GENERATION_HEADROOM_CHARS) purely so we can
+// detect the overshoot; once it happens, the visible reply rolls back to
+// the last sentence that finished within budget, so it's always both
+// within the limit and a complete thought. Only if no sentence completes
+// within budget at all (one long run-on) does it fall back to a hard cut at
+// a word boundary (rare).
+async function streamReply(requestMessages, aiDiv){
+  let full = '';
+  let pendingFrame = null;
+  let hardCut = false;
+
+  const flush = () => {
+    aiDiv.textContent = full || '…';
+    scrollToBottom(false);
+    pendingFrame = null;
+  };
+
+  const stream = await engine.chat.completions.create({
+    messages: requestMessages,
+    stream: true,
+    temperature: 0.7,
+    max_tokens: MAX_REPLY_TOKENS, // derived from MAX_REPLY_CHARS + headroom above so caps stay aligned
+  });
+
+  for await (const chunk of stream) {
+    const delta = chunk.choices[0]?.delta?.content || '';
+    full += delta;
+    if (!pendingFrame) pendingFrame = requestAnimationFrame(flush);
+
+    if (full.length > MAX_REPLY_CHARS) {
+      try { engine.interruptGenerate(); } catch (e) { /* best-effort */ }
+      const cutIdx = findLastSentenceEndWithin(full, MAX_REPLY_CHARS);
+      if (cutIdx > 0) {
+        full = full.slice(0, cutIdx).trimEnd();
+      } else {
+        // No sentence finished within budget at all — hard cut at the
+        // nearest word boundary as a last resort.
+        const lastSpace = full.lastIndexOf(' ', MAX_REPLY_CHARS);
+        full = full.slice(0, lastSpace > 0 ? lastSpace : MAX_REPLY_CHARS).trimEnd();
+        hardCut = true;
+      }
+      break;
+    }
+  }
+  if (pendingFrame) cancelAnimationFrame(pendingFrame);
+
+  if (hardCut) full += '…'; // the rare fallback case — genuinely incomplete
+  aiDiv.textContent = full || '…';
+  scrollToBottom(false);
+
+  return full;
+}
+
 async function sendMessage(){
   const text = inputField.value.trim();
   if (!text || !engine) return;
@@ -526,49 +606,17 @@ async function sendMessage(){
   inputField.disabled = true;
 
   const aiDiv = addMessage('ai', '…');
-  let full = '';
-  let pendingFrame = null;
-
-  const flush = () => {
-    aiDiv.textContent = full || '…';
-    scrollToBottom(false);
-    pendingFrame = null;
-  };
 
   isGenerating = true;
-  let wasTruncated = false;
   try {
-    const stream = await engine.chat.completions.create({
-      messages: buildRequestMessages(),
-      stream: true,
-      temperature: 0.7,
-      max_tokens: MAX_REPLY_TOKENS, // derived from MAX_REPLY_CHARS above so both caps stay aligned
-    });
+    const rawText = await streamReply(buildRequestMessages(), aiDiv);
 
-    for await (const chunk of stream) {
-      const delta = chunk.choices[0]?.delta?.content || '';
-      full += delta;
-      // Batch DOM writes to one per animation frame instead of one per
-      // token — this is what was causing the choppy/janky text updates.
-      if (!pendingFrame) pendingFrame = requestAnimationFrame(flush);
-      if (full.length >= MAX_REPLY_CHARS) {
-        full = full.slice(0, MAX_REPLY_CHARS).trimEnd();
-        wasTruncated = true;
-        try { engine.interruptGenerate(); } catch (e) { /* best-effort */ }
-        break;
-      }
-    }
-    if (wasTruncated) full += '…';
-    if (pendingFrame) cancelAnimationFrame(pendingFrame);
-    flush();
-
-    history.push({ role: 'assistant', content: full });
+    history.push({ role: 'assistant', content: rawText });
     // Only actually does work once history crosses the threshold — cheap
     // no-op otherwise. Awaited (rather than fire-and-forget) so it can't run
     // a second model call concurrently with whatever the user sends next.
     await condenseHistoryIfNeeded();
   } catch (err) {
-    if (pendingFrame) cancelAnimationFrame(pendingFrame);
     console.error(err);
 
     const msg = (err && err.message) || String(err);
