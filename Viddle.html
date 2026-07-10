@@ -186,6 +186,68 @@
   }
   #continueBtn{background:var(--accent);color:#0d1310;}
   #cancelBtn{background:#2c303a;color:var(--text);}
+  #characterBtn{
+    margin-left:auto;
+    background:#2c303a;
+    color:var(--text);
+    border:none;
+    border-radius:12px;
+    padding:5px 10px;
+    font-size:12px;
+    display:flex;align-items:center;gap:5px;
+    max-width:130px;
+    overflow:hidden;
+    white-space:nowrap;
+  }
+  #characterName{
+    overflow:hidden;text-overflow:ellipsis;
+  }
+  #characterPanel{
+    position:fixed;inset:0;
+    background:rgba(0,0,0,.6);
+    display:flex;align-items:flex-end;
+    z-index:20;
+  }
+  #characterPanel.hidden{display:none;}
+  #characterPanelInner{
+    width:100%;
+    background:var(--panel);
+    border-radius:18px 18px 0 0;
+    padding:20px;
+    padding-bottom:calc(20px + env(safe-area-inset-bottom));
+  }
+  #characterPanelTitle{
+    font-size:17px;font-weight:700;margin-bottom:6px;
+  }
+  #characterPanelHint{
+    font-size:12.5px;color:var(--muted);
+    margin:0 0 12px;line-height:1.45;
+  }
+  #characterText{
+    width:100%;height:110px;
+    background:#12141a;
+    border:1px solid #2c303a;
+    border-radius:10px;
+    padding:10px;
+    color:var(--text);
+    font-size:14px;
+    resize:none;
+    margin-bottom:10px;
+  }
+  #characterFile{
+    width:100%;
+    margin-bottom:14px;
+    font-size:13px;color:var(--muted);
+  }
+  #characterBtnRow{
+    display:flex;gap:10px;
+  }
+  #characterBtnRow button{
+    flex:1;border:none;border-radius:10px;
+    padding:11px;font-size:14px;font-weight:600;
+  }
+  #characterCancelBtn{background:#2c303a;color:var(--text);}
+  #characterApplyBtn{background:var(--accent);color:#0d1310;}
 </style>
 </head>
 <body>
@@ -200,12 +262,26 @@
   <div id="statusBar">
     <div id="statusDot"></div>
     <span id="statusText">Starting up…</span>
+    <button id="characterBtn" title="Switch character">🎭 <span id="characterName">Viddle</span></button>
   </div>
   <div id="progressWrap"><div id="progressBar"></div></div>
   <div id="messages"></div>
   <div id="inputBar">
     <textarea id="inputField" rows="1" placeholder="Loading model…" disabled></textarea>
     <button id="sendBtn" disabled>Send</button>
+  </div>
+
+  <div id="characterPanel" class="hidden">
+    <div id="characterPanelInner">
+      <div id="characterPanelTitle">Load a character</div>
+      <p id="characterPanelHint">Paste a background below, or upload a .txt file. Leave empty to use the default character, Viddle.</p>
+      <textarea id="characterText" placeholder="Name: Old Tomas the Blacksmith&#10;Personality: gruff but kind-hearted&#10;Background: has run the forge for 40 years..."></textarea>
+      <input type="file" id="characterFile" accept=".txt" />
+      <div id="characterBtnRow">
+        <button id="characterCancelBtn">Cancel</button>
+        <button id="characterApplyBtn">Load Character</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -223,6 +299,67 @@ const loadingPct = document.getElementById('loadingPct');
 const loadingBarFill = document.getElementById('loadingBarFill');
 const loadingDetail = document.getElementById('loadingDetail');
 const appEl = document.getElementById('app');
+const characterBtn = document.getElementById('characterBtn');
+const characterName = document.getElementById('characterName');
+const characterPanel = document.getElementById('characterPanel');
+const characterText = document.getElementById('characterText');
+const characterFile = document.getElementById('characterFile');
+const characterApplyBtn = document.getElementById('characterApplyBtn');
+const characterCancelBtn = document.getElementById('characterCancelBtn');
+
+const DEFAULT_CHARACTER_NAME = 'Viddle';
+const DEFAULT_SYSTEM_PROMPT =
+  "You are Viddle, a friendly and helpful AI assistant. Keep replies concise and conversational.";
+
+function buildRoleplaySystemPrompt(characterBackground){
+  return "You are roleplaying as a character in a game, based on the following background. " +
+    "Stay fully in character at all times, speak the way this character would speak, and keep " +
+    "responses short and natural, like spoken dialogue rather than an essay.\n\n" +
+    "Character background:\n" + characterBackground;
+}
+
+let currentSystemPrompt = DEFAULT_SYSTEM_PROMPT;
+let currentCharacterLabel = DEFAULT_CHARACTER_NAME;
+
+function applyCharacter(background, label){
+  if (background && background.trim()) {
+    currentSystemPrompt = buildRoleplaySystemPrompt(background.trim());
+    currentCharacterLabel = label || 'Custom character';
+  } else {
+    currentSystemPrompt = DEFAULT_SYSTEM_PROMPT;
+    currentCharacterLabel = DEFAULT_CHARACTER_NAME;
+  }
+  characterName.textContent = currentCharacterLabel;
+  history = [{ role: 'system', content: currentSystemPrompt }];
+  messages.innerHTML = '';
+  addMessage('system', 'Now talking with: ' + currentCharacterLabel);
+}
+
+characterBtn.addEventListener('click', () => {
+  characterPanel.classList.remove('hidden');
+});
+characterCancelBtn.addEventListener('click', () => {
+  characterPanel.classList.add('hidden');
+});
+characterFile.addEventListener('change', () => {
+  const file = characterFile.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => { characterText.value = reader.result; };
+  reader.readAsText(file);
+});
+characterApplyBtn.addEventListener('click', () => {
+  const bg = characterText.value.trim();
+  let label = DEFAULT_CHARACTER_NAME;
+  if (bg) {
+    const firstLine = bg.split('\n')[0].replace(/^name:\s*/i, '').trim();
+    label = firstLine.slice(0, 24) || 'Custom character';
+  }
+  applyCharacter(bg, label);
+  characterPanel.classList.add('hidden');
+  characterText.value = '';
+  characterFile.value = '';
+});
 
 // Some Android browsers/WebViews don't reliably shrink 100dvh when the
 // keyboard opens, leaving a gap above it. Track the real visible area
@@ -241,7 +378,7 @@ if (window.visualViewport) {
 const MODEL_ID = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
 
 let engine = null;
-let history = [];
+let history = [{ role: 'system', content: currentSystemPrompt }];
 
 function isNearBottom(){
   const threshold = 80;
@@ -382,12 +519,27 @@ async function init(){
   }
 }
 
+// Keep only the most recent turns so the model isn't re-processing an
+// ever-growing conversation on every reply — this is a major, avoidable
+// source of sustained GPU load as a chat gets longer.
+const MAX_HISTORY_MESSAGES = 12;
+function trimHistory(){
+  // Always keep the system message (character background) at index 0 —
+  // only trim the conversation turns that follow it.
+  if (history.length > MAX_HISTORY_MESSAGES + 1) {
+    const systemMsg = history[0];
+    const rest = history.slice(1).slice(-(MAX_HISTORY_MESSAGES));
+    history = [systemMsg, ...rest];
+  }
+}
+
 async function sendMessage(){
   const text = inputField.value.trim();
   if (!text || !engine) return;
 
   addMessage('user', text);
   history.push({ role: 'user', content: text });
+  trimHistory();
   inputField.value = '';
   inputField.style.height = 'auto';
   sendBtn.disabled = true;
@@ -408,6 +560,7 @@ async function sendMessage(){
       messages: history,
       stream: true,
       temperature: 0.7,
+      max_tokens: 150,
     });
 
     for await (const chunk of stream) {
