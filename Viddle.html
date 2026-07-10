@@ -282,7 +282,7 @@
   </div>
 </div>
 
-<div id="fatalError" style="display:none; margin:14px 16px; padding:12px 14px; background:#2a1418; border:1px solid #ef5350; border-radius:10px; color:#ff8a80; font-size:13px; line-height:1.5;"></div>
+<div id="fatalError" style="display:none; position:fixed; top:0; left:0; right:0; z-index:200; margin:14px 16px; padding:12px 14px; background:#2a1418; border:1px solid #ef5350; border-radius:10px; color:#ff8a80; font-size:13px; line-height:1.5; box-shadow:0 4px 20px rgba(0,0,0,0.5);"></div>
 
 <script type="module">
 // IMPORTANT: this used to be a blocking top-level `await import(...)`. That meant
@@ -311,10 +311,12 @@ const wllamaReadyPromise = (async () => {
     wllamaLoadError = err;
     const banner = document.getElementById("fatalError");
     banner.style.display = "block";
-    banner.textContent =
+    banner.innerHTML =
       "Couldn't load the AI engine from the CDN, so nothing on this page will work. " +
       "This is almost always a network problem (offline, DNS, or an ad-blocker/privacy extension blocking cdn.jsdelivr.net) rather than a bug in the page itself. " +
-      "Check your connection and reload. Details: " + (err?.message || err);
+      "Check your connection and try again.<br><br><b>Details:</b> " + (err?.message || String(err)) +
+      "<br><br><button id='retryEngineBtn' style='background:#ef5350;border:none;color:white;padding:8px 14px;border-radius:8px;font-size:13px;'>Reload page</button>";
+    document.getElementById("retryEngineBtn").addEventListener("click", () => location.reload());
     onEngineError();
   }
 })();
