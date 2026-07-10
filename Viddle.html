@@ -186,68 +186,6 @@
   }
   #continueBtn{background:var(--accent);color:#0d1310;}
   #cancelBtn{background:#2c303a;color:var(--text);}
-  #characterBtn{
-    margin-left:auto;
-    background:#2c303a;
-    color:var(--text);
-    border:none;
-    border-radius:12px;
-    padding:5px 10px;
-    font-size:12px;
-    display:flex;align-items:center;gap:5px;
-    max-width:130px;
-    overflow:hidden;
-    white-space:nowrap;
-  }
-  #characterName{
-    overflow:hidden;text-overflow:ellipsis;
-  }
-  #characterPanel{
-    position:fixed;inset:0;
-    background:rgba(0,0,0,.6);
-    display:flex;align-items:flex-end;
-    z-index:20;
-  }
-  #characterPanel.hidden{display:none;}
-  #characterPanelInner{
-    width:100%;
-    background:var(--panel);
-    border-radius:18px 18px 0 0;
-    padding:20px;
-    padding-bottom:calc(20px + env(safe-area-inset-bottom));
-  }
-  #characterPanelTitle{
-    font-size:17px;font-weight:700;margin-bottom:6px;
-  }
-  #characterPanelHint{
-    font-size:12.5px;color:var(--muted);
-    margin:0 0 12px;line-height:1.45;
-  }
-  #characterText{
-    width:100%;height:110px;
-    background:#12141a;
-    border:1px solid #2c303a;
-    border-radius:10px;
-    padding:10px;
-    color:var(--text);
-    font-size:14px;
-    resize:none;
-    margin-bottom:10px;
-  }
-  #characterFile{
-    width:100%;
-    margin-bottom:14px;
-    font-size:13px;color:var(--muted);
-  }
-  #characterBtnRow{
-    display:flex;gap:10px;
-  }
-  #characterBtnRow button{
-    flex:1;border:none;border-radius:10px;
-    padding:11px;font-size:14px;font-weight:600;
-  }
-  #characterCancelBtn{background:#2c303a;color:var(--text);}
-  #characterApplyBtn{background:var(--accent);color:#0d1310;}
 </style>
 </head>
 <body>
@@ -262,26 +200,12 @@
   <div id="statusBar">
     <div id="statusDot"></div>
     <span id="statusText">Starting up…</span>
-    <button id="characterBtn" title="Switch character">🎭 <span id="characterName">Viddle</span></button>
   </div>
   <div id="progressWrap"><div id="progressBar"></div></div>
   <div id="messages"></div>
   <div id="inputBar">
     <textarea id="inputField" rows="1" placeholder="Loading model…" disabled></textarea>
     <button id="sendBtn" disabled>Send</button>
-  </div>
-
-  <div id="characterPanel" class="hidden">
-    <div id="characterPanelInner">
-      <div id="characterPanelTitle">Load a character</div>
-      <p id="characterPanelHint">Paste a background below, or upload a .txt file. Leave empty to use the default character, Viddle.</p>
-      <textarea id="characterText" placeholder="Name: Old Tomas the Blacksmith&#10;Personality: gruff but kind-hearted&#10;Background: has run the forge for 40 years..."></textarea>
-      <input type="file" id="characterFile" accept=".txt" />
-      <div id="characterBtnRow">
-        <button id="characterCancelBtn">Cancel</button>
-        <button id="characterApplyBtn">Load Character</button>
-      </div>
-    </div>
   </div>
 </div>
 
@@ -299,67 +223,6 @@ const loadingPct = document.getElementById('loadingPct');
 const loadingBarFill = document.getElementById('loadingBarFill');
 const loadingDetail = document.getElementById('loadingDetail');
 const appEl = document.getElementById('app');
-const characterBtn = document.getElementById('characterBtn');
-const characterName = document.getElementById('characterName');
-const characterPanel = document.getElementById('characterPanel');
-const characterText = document.getElementById('characterText');
-const characterFile = document.getElementById('characterFile');
-const characterApplyBtn = document.getElementById('characterApplyBtn');
-const characterCancelBtn = document.getElementById('characterCancelBtn');
-
-const DEFAULT_CHARACTER_NAME = 'Viddle';
-const DEFAULT_SYSTEM_PROMPT =
-  "You are Viddle, a friendly and helpful AI assistant. Keep replies concise and conversational.";
-
-function buildRoleplaySystemPrompt(characterBackground){
-  return "You are roleplaying as a character in a game, based on the following background. " +
-    "Stay fully in character at all times, speak the way this character would speak, and keep " +
-    "responses short and natural, like spoken dialogue rather than an essay.\n\n" +
-    "Character background:\n" + characterBackground;
-}
-
-let currentSystemPrompt = DEFAULT_SYSTEM_PROMPT;
-let currentCharacterLabel = DEFAULT_CHARACTER_NAME;
-
-function applyCharacter(background, label){
-  if (background && background.trim()) {
-    currentSystemPrompt = buildRoleplaySystemPrompt(background.trim());
-    currentCharacterLabel = label || 'Custom character';
-  } else {
-    currentSystemPrompt = DEFAULT_SYSTEM_PROMPT;
-    currentCharacterLabel = DEFAULT_CHARACTER_NAME;
-  }
-  characterName.textContent = currentCharacterLabel;
-  history = [{ role: 'system', content: currentSystemPrompt }];
-  messages.innerHTML = '';
-  addMessage('system', 'Now talking with: ' + currentCharacterLabel);
-}
-
-characterBtn.addEventListener('click', () => {
-  characterPanel.classList.remove('hidden');
-});
-characterCancelBtn.addEventListener('click', () => {
-  characterPanel.classList.add('hidden');
-});
-characterFile.addEventListener('change', () => {
-  const file = characterFile.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => { characterText.value = reader.result; };
-  reader.readAsText(file);
-});
-characterApplyBtn.addEventListener('click', () => {
-  const bg = characterText.value.trim();
-  let label = DEFAULT_CHARACTER_NAME;
-  if (bg) {
-    const firstLine = bg.split('\n')[0].replace(/^name:\s*/i, '').trim();
-    label = firstLine.slice(0, 24) || 'Custom character';
-  }
-  applyCharacter(bg, label);
-  characterPanel.classList.add('hidden');
-  characterText.value = '';
-  characterFile.value = '';
-});
 
 // Some Android browsers/WebViews don't reliably shrink 100dvh when the
 // keyboard opens, leaving a gap above it. Track the real visible area
@@ -378,7 +241,10 @@ if (window.visualViewport) {
 const MODEL_ID = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
 
 let engine = null;
-let history = [{ role: 'system', content: currentSystemPrompt }];
+let history = [];
+let isGenerating = false;
+let isLoadingModel = false;
+let needsReloadOnResume = false;
 
 function isNearBottom(){
   const threshold = 80;
@@ -441,6 +307,26 @@ function askToContinueOnCellular(){
   });
 }
 
+// Hooks called by the App Inventor wrapper (TaifunTools1.ActivityStateChanged
+// -> EvaluateJavaScript) whenever Android pauses/resumes the activity. This
+// is what actually kills the GPU device mid-stream (screen lock, app
+// switch, etc.) — by reacting here we interrupt cleanly *before* that
+// happens instead of only cleaning up after a mapAsync crash.
+window._pvNativePause = function(){
+  if (!engine || !isGenerating) return;
+  try { engine.interruptGenerate(); } catch (e) { /* best-effort */ }
+  needsReloadOnResume = true;
+};
+
+window._pvNativeResume = function(){
+  if (!needsReloadOnResume || isLoadingModel) return;
+  needsReloadOnResume = false;
+  addMessage('system', 'Paused mid-reply while backgrounded — reloading the model to be safe.');
+  sendBtn.disabled = true;
+  inputField.disabled = true;
+  loadModel(true);
+};
+
 // Cache the page shell itself so Viddle can open even with no network
 // connection — same idea as the model weights being cached, but for the
 // HTML/JS that runs the app.
@@ -452,24 +338,38 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-async function init(){
+// Loads (or re-loads) the model. Shared by first launch and by the crash
+// recovery path in sendMessage(), since both need the same engine-creation
+// dance. `isRecovery` just changes the copy/UI a bit.
+async function loadModel(isRecovery){
+  isLoadingModel = true;
+  try {
+    return await loadModelInner(isRecovery);
+  } finally {
+    isLoadingModel = false;
+  }
+}
+
+async function loadModelInner(isRecovery){
   showOverlay();
 
   if (!navigator.gpu) {
     setStatus('WebGPU not available in this WebView', '');
     loadingDetail.textContent = "This device/browser doesn't expose WebGPU, so the model can't run here.";
     loadingPct.textContent = '';
-    return;
+    return false;
   }
 
-  // Android system WebView (used by the App Inventor wrapper) includes "; wv)"
-  // in its user agent — regular Chrome does not. Use this to only request
-  // persistent storage inside the wrapped app, leaving Chrome's cache temporary.
-  const isWrappedWebView = /; wv\)/.test(navigator.userAgent);
+  if (!isRecovery) {
+    // Android system WebView (used by the App Inventor wrapper) includes "; wv)"
+    // in its user agent — regular Chrome does not. Use this to only request
+    // persistent storage inside the wrapped app, leaving Chrome's cache temporary.
+    const isWrappedWebView = /; wv\)/.test(navigator.userAgent);
 
-  if (isWrappedWebView && navigator.storage && navigator.storage.persist) {
-    const granted = await navigator.storage.persist();
-    console.log('Persistent storage granted:', granted);
+    if (isWrappedWebView && navigator.storage && navigator.storage.persist) {
+      const granted = await navigator.storage.persist();
+      console.log('Persistent storage granted:', granted);
+    }
   }
 
   // Check whether the model is already sitting in cache before deciding
@@ -482,20 +382,23 @@ async function init(){
     }
   } catch (e) { /* cache check is best-effort */ }
 
-  if (!alreadyCached && isOnCellular()) {
+  if (!isRecovery && !alreadyCached && isOnCellular()) {
     updateLoadingUI(0, '');
     const proceed = await askToContinueOnCellular();
     if (!proceed) {
       loadingDetail.textContent = "Paused — reopen this page once you're on wifi.";
       loadingPct.textContent = '';
-      return;
+      return false;
     }
   }
 
-  updateLoadingUI(0, alreadyCached ? 'Loading cached model…' : 'Downloading model (first run only)…');
-  setStatus('Loading…', 'loading');
+  updateLoadingUI(0, isRecovery ? 'Reloading model…' : (alreadyCached ? 'Loading cached model…' : 'Downloading model (first run only)…'));
+  setStatus(isRecovery ? 'Reconnecting to model…' : 'Loading…', 'loading');
 
   try {
+    // Always build a brand-new engine rather than calling engine.reload() —
+    // on recovery the old engine's GPU device is the thing that died, so we
+    // need a fresh WebGPU device underneath it, not just fresh weights.
     engine = await webllm.CreateMLCEngine(MODEL_ID, {
       initProgressCallback: (report) => {
         const pct = Math.round((report.progress || 0) * 100);
@@ -510,27 +413,23 @@ async function init(){
     inputField.disabled = false;
     inputField.placeholder = 'Message the AI…';
     sendBtn.disabled = false;
-    addMessage('system', 'Model loaded. Everything from here runs on-device, no internet needed.');
+    if (isRecovery) {
+      addMessage('system', 'Reconnected. (The on-device model briefly lost its GPU context — this usually happens if the app was backgrounded mid-reply. Your chat history is intact, just resend if the last reply didn\'t come through.)');
+    } else {
+      addMessage('system', 'Model loaded. Everything from here runs on-device, no internet needed.');
+    }
+    return true;
   } catch (err) {
     setStatus('Failed to load model', '');
     loadingDetail.textContent = 'Error: ' + err.message;
     loadingPct.textContent = '';
     console.error(err);
+    return false;
   }
 }
 
-// Keep only the most recent turns so the model isn't re-processing an
-// ever-growing conversation on every reply — this is a major, avoidable
-// source of sustained GPU load as a chat gets longer.
-const MAX_HISTORY_MESSAGES = 12;
-function trimHistory(){
-  // Always keep the system message (character background) at index 0 —
-  // only trim the conversation turns that follow it.
-  if (history.length > MAX_HISTORY_MESSAGES + 1) {
-    const systemMsg = history[0];
-    const rest = history.slice(1).slice(-(MAX_HISTORY_MESSAGES));
-    history = [systemMsg, ...rest];
-  }
+function init(){
+  return loadModel(false);
 }
 
 async function sendMessage(){
@@ -539,7 +438,6 @@ async function sendMessage(){
 
   addMessage('user', text);
   history.push({ role: 'user', content: text });
-  trimHistory();
   inputField.value = '';
   inputField.style.height = 'auto';
   sendBtn.disabled = true;
@@ -555,12 +453,12 @@ async function sendMessage(){
     pendingFrame = null;
   };
 
+  isGenerating = true;
   try {
     const stream = await engine.chat.completions.create({
       messages: history,
       stream: true,
       temperature: 0.7,
-      max_tokens: 150,
     });
 
     for await (const chunk of stream) {
@@ -575,10 +473,35 @@ async function sendMessage(){
 
     history.push({ role: 'assistant', content: full });
   } catch (err) {
-    aiDiv.textContent = 'Error: ' + err.message;
+    if (pendingFrame) cancelAnimationFrame(pendingFrame);
     console.error(err);
+
+    const msg = (err && err.message) || String(err);
+    // These two signatures both mean the WebGPU device underneath the engine
+    // died mid-generation (most often: the app/tab was backgrounded or the
+    // screen locked while a reply was streaming). Once that happens the
+    // engine object is unrecoverable — every future call fails with "Model
+    // not loaded" even though nothing is technically wrong with the code
+    // calling it. The fix is to drop the engine and rebuild it from scratch.
+    const isDeviceLost = /mapAsync|unmapped before mapping|model not loaded/i.test(msg);
+
+    if (isDeviceLost) {
+      aiDiv.textContent = 'Lost connection to the on-device model — reloading…';
+      isGenerating = false;
+      engine = null;
+      // Don't leave the failed reply in history — it never actually completed.
+      if (history[history.length - 1]?.role === 'user') history.pop();
+      sendBtn.disabled = true;
+      inputField.disabled = true;
+      await loadModel(true);
+      inputField.focus();
+      return;
+    }
+
+    aiDiv.textContent = 'Error: ' + msg;
   }
 
+  isGenerating = false;
   sendBtn.disabled = false;
   inputField.disabled = false;
   inputField.focus();
