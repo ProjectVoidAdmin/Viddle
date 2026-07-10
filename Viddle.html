@@ -280,9 +280,26 @@
   </div>
 </div>
 
+<div id="fatalError" style="display:none; margin:14px 16px; padding:12px 14px; background:#2a1418; border:1px solid #ef5350; border-radius:10px; color:#ff8a80; font-size:13px; line-height:1.5;"></div>
+
 <script type="module">
-import { Wllama } from "https://cdn.jsdelivr.net/npm/@wllama/wllama@2.3.7/esm/index.js";
-import WasmFromCDN from "https://cdn.jsdelivr.net/npm/@wllama/wllama@2.3.7/esm/wasm-from-cdn.js";
+let Wllama, WasmFromCDN;
+try {
+  const WLLAMA_VERSION = "2.3.7";
+  const mod = await import(`https://cdn.jsdelivr.net/npm/@wllama/wllama@${WLLAMA_VERSION}/esm/index.js`);
+  Wllama = mod.Wllama;
+  const wasmMod = await import(`https://cdn.jsdelivr.net/npm/@wllama/wllama@${WLLAMA_VERSION}/esm/wasm-from-cdn.js`);
+  WasmFromCDN = wasmMod.default;
+} catch (err) {
+  console.error("Failed to load wllama from CDN:", err);
+  const banner = document.getElementById("fatalError");
+  banner.style.display = "block";
+  banner.textContent =
+    "Couldn't load the AI engine from the CDN, so nothing on this page will work yet. " +
+    "This is almost always a network problem (offline, DNS, or an ad-blocker/privacy extension blocking cdn.jsdelivr.net) rather than a bug in the page itself. " +
+    "Check your connection and reload. Details: " + (err?.message || err);
+  throw err;
+}
 
 const MODEL_LABEL = "Qwen2.5 1.5B";
 const MODEL_DOWNLOAD_URL = "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf";
