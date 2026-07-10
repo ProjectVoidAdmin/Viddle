@@ -304,7 +304,8 @@ async function importWithRetries(path, { retries = 2, delayMs = 800 } = {}) {
   for (const base of CDN_BASES) {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        return await import(`${base}${path}`);
+        const mod = await import(`${base}${path}`);
+        return { mod, base };
       } catch (err) {
         lastErr = err;
         console.warn(`Import failed (${base}${path}), attempt ${attempt + 1}:`, err?.message || err);
@@ -317,10 +318,24 @@ async function importWithRetries(path, { retries = 2, delayMs = 800 } = {}) {
 
 const wllamaReadyPromise = (async () => {
   try {
-    const mod = await importWithRetries(`/esm/index.js`);
+    const { mod, base } = await importWithRetries(`/esm/index.js`);
     Wllama = mod.Wllama;
-    const wasmMod = await importWithRetries(`/esm/wasm-from-cdn.js`);
-    WasmFromCDN = wasmMod.default;
+    // Deliberately NOT importing esm/wasm-from-cdn.js here. That file is a thin
+    // wrapper that self-locates its own CDN URL via import.meta.url, and both
+    // jsdelivr and unpkg have known, documented bugs resolving that pattern for
+    // some packages (see jsdelivr/jsdelivr#18561) — it failed consistently on
+    // both mirrors even though plain index.js loaded fine every time. Instead,
+    // build the same config object ourselves, using plain string URLs against
+    // whichever CDN base actually worked above. This is also the library's own
+    // officially-documented supported approach (the wasm-from-cdn.js wrapper is
+    // explicitly marked "not recommended" in wllama's README).
+    WasmFromCDN = {
+      "single-thread/wllama.js": `${base}/esm/single-thread/wllama.js`,
+      "single-thread/wllama.wasm": `${base}/esm/single-thread/wllama.wasm`,
+      "multi-thread/wllama.js": `${base}/esm/multi-thread/wllama.js`,
+      "multi-thread/wllama.wasm": `${base}/esm/multi-thread/wllama.wasm`,
+      "multi-thread/wllama.worker.mjs": `${base}/esm/multi-thread/wllama.worker.mjs`,
+    };
     wllamaReady = true;
     onEngineReady();
   } catch (err) {
