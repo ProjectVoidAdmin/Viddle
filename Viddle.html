@@ -221,7 +221,7 @@
   <header>
     <h1><span class="dot" id="statusDot"></span> Viddle</h1>
     <div style="display:flex; align-items:center; gap:10px;">
-      <span id="status-text">not loaded</span>
+      <span id="status-text">loading engine…</span>
       <button id="memBtn" style="display:none;">🧠<span class="badge" id="memBadge"></span></button>
       <button id="resetBtn" style="display:none;">Reset chat</button>
       <button id="changeModelBtn" style="display:none; background:none; border:none; color: var(--muted); font-size: 12px; cursor:pointer; padding:4px 8px;">Change model</button>
@@ -231,7 +231,7 @@
   <div id="setup">
     <p id="setupIntro">Viddle runs a 1.5B language model fully on-device. Pick a .gguf file you already have, or download it once — either way, nothing ever gets uploaded anywhere.</p>
 
-    <div class="model-card" id="pickFileCard">
+    <div class="model-card" id="pickFileCard" style="opacity:0.5;">
       <div class="info">
         <div class="name">Qwen2.5 1.5B Instruct</div>
         <div class="desc" id="pickFileDesc">Tap to select the .gguf file from your device</div>
@@ -240,7 +240,7 @@
     </div>
     <input type="file" id="fileInput" accept=".gguf" style="display:none;">
 
-    <div class="model-card" id="downloadModelCard">
+    <div class="model-card" id="downloadModelCard" style="opacity:0.5;">
       <div class="info">
         <div class="name">Qwen2.5 1.5B Instruct</div>
         <div class="desc" id="downloadModelDesc">Download it now (Q4_K_M, ~1.1GB) — requires internet once, then works offline</div>
@@ -285,23 +285,39 @@
 <div id="fatalError" style="display:none; margin:14px 16px; padding:12px 14px; background:#2a1418; border:1px solid #ef5350; border-radius:10px; color:#ff8a80; font-size:13px; line-height:1.5;"></div>
 
 <script type="module">
+// IMPORTANT: this used to be a blocking top-level `await import(...)`. That meant
+// ALL of the code below it — including every button's addEventListener call — did
+// not run until the CDN import finished. On a slow/flaky mobile connection, that
+// left a window (sometimes indefinite) where the cards look tappable, show their
+// CSS :active flash on tap, but have no click listener behind them at all, so
+// nothing happens. Fix: kick the import off in the background (no top-level
+// await) so the rest of the script — and all the event listeners — run
+// immediately, and gate the actual actions on a `wllamaReady` flag instead.
 let Wllama, WasmFromCDN;
-try {
-  const WLLAMA_VERSION = "2.3.7";
-  const mod = await import(`https://cdn.jsdelivr.net/npm/@wllama/wllama@${WLLAMA_VERSION}/esm/index.js`);
-  Wllama = mod.Wllama;
-  const wasmMod = await import(`https://cdn.jsdelivr.net/npm/@wllama/wllama@${WLLAMA_VERSION}/esm/wasm-from-cdn.js`);
-  WasmFromCDN = wasmMod.default;
-} catch (err) {
-  console.error("Failed to load wllama from CDN:", err);
-  const banner = document.getElementById("fatalError");
-  banner.style.display = "block";
-  banner.textContent =
-    "Couldn't load the AI engine from the CDN, so nothing on this page will work yet. " +
-    "This is almost always a network problem (offline, DNS, or an ad-blocker/privacy extension blocking cdn.jsdelivr.net) rather than a bug in the page itself. " +
-    "Check your connection and reload. Details: " + (err?.message || err);
-  throw err;
-}
+let wllamaReady = false;
+let wllamaLoadError = null;
+
+const wllamaReadyPromise = (async () => {
+  try {
+    const WLLAMA_VERSION = "2.3.7";
+    const mod = await import(`https://cdn.jsdelivr.net/npm/@wllama/wllama@${WLLAMA_VERSION}/esm/index.js`);
+    Wllama = mod.Wllama;
+    const wasmMod = await import(`https://cdn.jsdelivr.net/npm/@wllama/wllama@${WLLAMA_VERSION}/esm/wasm-from-cdn.js`);
+    WasmFromCDN = wasmMod.default;
+    wllamaReady = true;
+    onEngineReady();
+  } catch (err) {
+    console.error("Failed to load wllama from CDN:", err);
+    wllamaLoadError = err;
+    const banner = document.getElementById("fatalError");
+    banner.style.display = "block";
+    banner.textContent =
+      "Couldn't load the AI engine from the CDN, so nothing on this page will work. " +
+      "This is almost always a network problem (offline, DNS, or an ad-blocker/privacy extension blocking cdn.jsdelivr.net) rather than a bug in the page itself. " +
+      "Check your connection and reload. Details: " + (err?.message || err);
+    onEngineError();
+  }
+})();
 
 const MODEL_LABEL = "Qwen2.5 1.5B";
 const MODEL_DOWNLOAD_URL = "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf";
@@ -396,7 +412,25 @@ async function clearStoredModel() {
   } catch {}
 }
 
-pickFileCard.addEventListener("click", () => fileInput.click());
+// While the wllama engine is still downloading from the CDN, the cards are
+// dimmed and any tap just shows a toast instead of silently doing nothing.
+function onEngineReady() {
+  pickFileCard.style.opacity = "1";
+  downloadModelCard.style.opacity = "1";
+  if (statusText.textContent === "loading engine…") {
+    statusDot.className = "dot";
+    statusText.textContent = "not loaded";
+  }
+}
+function onEngineError() {
+  statusDot.className = "dot error";
+  statusText.textContent = "engine failed to load";
+}
+
+pickFileCard.addEventListener("click", () => {
+  if (!wllamaReady) { showToast("Still loading the AI engine — one sec…"); return; }
+  fileInput.click();
+});
 fileInput.addEventListener("change", (e) => {
   const file = e.target.files[0];
   if (file) startModelFromBlob(file, { fromCache: false });
@@ -407,6 +441,7 @@ changeModelBtn.addEventListener("click", async () => {
 });
 
 downloadModelCard.addEventListener("click", () => {
+  if (!wllamaReady) { showToast("Still loading the AI engine — one sec…"); return; }
   if (downloadModelCard.dataset.busy === "1") return;
   downloadModelFromUrl(MODEL_DOWNLOAD_URL);
 });
@@ -676,6 +711,7 @@ async function readFileWithProgress(file, onProgress) {
 }
 
 async function startModelFromBlob(fileOrBlob, { fromCache }) {
+  await wllamaReadyPromise; // safety net; should already be resolved by the time this is called
   setupEl.style.display = "none";
   progressWrap.style.display = "block";
   statusDot.className = "dot loading";
