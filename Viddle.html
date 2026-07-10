@@ -2,971 +2,448 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Viddle</title>
-<link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#0e0f13">
-<meta name="background-color" content="#0e0f13">
-<link rel="icon" href="icon-192.png">
-<link rel="apple-touch-icon" href="icon-192.png">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Viddle">
-<meta name="mobile-web-app-capable" content="yes">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
+<title>Local AI Chat</title>
 <style>
-  :root {
-    --bg: #0e0f13;
-    --panel: #16181f;
-    --panel2: #1d2029;
-    --accent: #7c5cff;
-    --accent2: #4dd0e1;
-    --text: #e8e8ee;
-    --muted: #8a8d9a;
-    --user: #2a2f3d;
-    --bot: #1f2430;
-    --border: #262a36;
+  :root{
+    --bg:#14161a;
+    --panel:#1c1f26;
+    --bubble-user:#2e6f5e;
+    --bubble-ai:#242832;
+    --text:#e7e9ee;
+    --muted:#8a8f9c;
+    --accent:#5fd6a8;
+    --danger:#d97757;
   }
-  * { box-sizing: border-box; }
-  html, body {
-    margin: 0; padding: 0; height: 100%;
-    background: var(--bg); color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    overscroll-behavior: none;
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0;padding:0;height:100%;
+    background:var(--bg);color:var(--text);
+    font-family:-apple-system,Roboto,Segoe UI,Helvetica,Arial,sans-serif;
+    overflow:hidden;
+    overscroll-behavior:none;
   }
-  #app { display: flex; flex-direction: column; height: 100dvh; }
-
-  header {
-    padding: 14px 16px;
-    background: linear-gradient(135deg, #191b23, #14151b);
-    border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; justify-content: space-between;
-    flex-shrink: 0;
+  #app{
+    display:flex;flex-direction:column;
+    height:100vh;height:100dvh;
   }
-  header h1 {
-    font-size: 16px; margin: 0; font-weight: 600;
-    display: flex; align-items: center; gap: 8px;
+  #statusBar{
+    padding:10px 14px;
+    font-size:12.5px;
+    color:var(--muted);
+    background:var(--panel);
+    border-bottom:1px solid #262a33;
+    display:flex;align-items:center;gap:8px;
+    flex-shrink:0;
   }
-  header h1 .dot {
-    width: 8px; height: 8px; border-radius: 50%;
-    background: var(--muted);
+  #statusDot{
+    width:8px;height:8px;border-radius:50%;
+    background:var(--danger);
+    flex-shrink:0;
+    transition:background .3s;
   }
-  header h1 .dot.ready { background: #4caf50; box-shadow: 0 0 8px #4caf50; }
-  header h1 .dot.loading { background: #ffb74d; box-shadow: 0 0 8px #ffb74d; animation: pulse 1s infinite; }
-  header h1 .dot.error { background: #ef5350; box-shadow: 0 0 8px #ef5350; }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
-  #status-text { font-size: 11px; color: var(--muted); }
-
-  #setup {
-    padding: 20px 16px; overflow-y: auto; flex: 1;
-    display: flex; flex-direction: column; gap: 14px;
+  #statusDot.ready{background:var(--accent);}
+  #statusDot.loading{background:#e0b84c;animation:pulse 1s infinite;}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.35;}}
+  #progressWrap{
+    flex-shrink:0;height:3px;background:#262a33;
   }
-  #setup p { color: var(--muted); font-size: 14px; line-height: 1.5; margin: 0; }
-  .model-card {
-    background: var(--panel); border: 1px solid var(--border);
-    border-radius: 12px; padding: 14px 16px;
-    display: flex; justify-content: space-between; align-items: center;
-    gap: 12px; cursor: pointer; transition: border-color .15s;
-    user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
-    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  #progressBar{
+    height:100%;width:0%;background:var(--accent);
+    transition:width .2s;
   }
-  .model-card:active { border-color: var(--accent); }
-  .model-card .info { flex: 1; }
-  .model-card .name { font-weight: 600; font-size: 14px; }
-  .model-card .desc { font-size: 12px; color: var(--muted); margin-top: 2px; }
-  .model-card .size {
-    font-size: 11px; color: var(--accent2); background: rgba(77,208,225,0.1);
-    padding: 3px 8px; border-radius: 20px; white-space: nowrap;
+  #messages{
+    flex:1;overflow-y:auto;
+    min-height:0;
+    overscroll-behavior-y:contain;
+    padding:16px 12px 8px;
+    display:flex;flex-direction:column;gap:10px;
+    -webkit-overflow-scrolling:touch;
   }
-  #progress-wrap {
-    display: none; padding: 14px 16px; background: var(--panel);
-    border-top: 1px solid var(--border); flex-shrink: 0;
+  .msg{
+    max-width:82%;
+    padding:10px 13px;
+    border-radius:14px;
+    font-size:15px;
+    line-height:1.42;
+    white-space:pre-wrap;
+    word-wrap:break-word;
   }
-  #progress-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; display:flex; justify-content: space-between; }
-  #progress-bar-bg {
-    height: 6px; background: var(--panel2); border-radius: 3px; overflow: hidden;
+  .msg.user{
+    align-self:flex-end;
+    background:var(--bubble-user);
+    border-bottom-right-radius:4px;
   }
-  #progress-bar {
-    height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--accent2));
-    transition: width .2s;
+  .msg.ai{
+    align-self:flex-start;
+    background:var(--bubble-ai);
+    border-bottom-left-radius:4px;
   }
-  #progress-bar.indeterminate {
-    width: 40% !important;
-    animation: indeterminate 1.3s ease-in-out infinite;
+  .msg.system{
+    align-self:center;
+    background:transparent;
+    color:var(--muted);
+    font-size:13px;
+    text-align:center;
+    max-width:90%;
   }
-  @keyframes indeterminate {
-    0% { transform: translateX(-100%); }
-    100% { transform: translateX(250%); }
+  #inputBar{
+    flex-shrink:0;
+    display:flex;gap:8px;
+    padding:10px 10px calc(10px + env(safe-area-inset-bottom));
+    background:var(--panel);
+    border-top:1px solid #262a33;
   }
-  #progress-note {
-    font-size: 11px; color: var(--muted); margin-top: 8px; text-align: center;
+  #inputField{
+    flex:1;
+    background:#12141a;
+    border:1px solid #2c303a;
+    border-radius:20px;
+    padding:10px 16px;
+    color:var(--text);
+    font-size:15px;
+    outline:none;
+    resize:none;
+    max-height:100px;
   }
-
-  #chat {
-    flex: 1; overflow-y: auto; padding: 16px; display: none;
-    flex-direction: column; gap: 12px;
+  #sendBtn{
+    background:var(--accent);
+    color:#0d1310;
+    border:none;
+    border-radius:20px;
+    padding:0 18px;
+    font-size:15px;
+    font-weight:600;
+    flex-shrink:0;
   }
-  .msg { display: flex; flex-direction: column; max-width: 85%; }
-  .msg.user { align-self: flex-end; align-items: flex-end; }
-  .msg.bot { align-self: flex-start; align-items: flex-start; }
-  .bubble {
-    padding: 10px 14px; border-radius: 16px; font-size: 14.5px; line-height: 1.45;
-    white-space: pre-wrap; word-wrap: break-word;
+  #sendBtn:disabled{
+    background:#3a3f4a;
+    color:var(--muted);
   }
-  .msg.user .bubble { background: var(--accent); color: white; border-bottom-right-radius: 4px; }
-  .msg.bot .bubble { background: var(--bot); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
-  .msg .meta { font-size: 10px; color: var(--muted); margin-top: 3px; padding: 0 4px; }
-
-  #inputbar {
-    display: none; padding: 10px 12px; gap: 8px;
-    background: var(--panel); border-top: 1px solid var(--border);
-    flex-shrink: 0; align-items: flex-end;
+  #loadingOverlay{
+    position:fixed;inset:0;
+    background:var(--bg);
+    display:flex;flex-direction:column;
+    align-items:center;justify-content:center;
+    gap:18px;
+    z-index:10;
+    padding:24px;
+    text-align:center;
   }
-  #inputbar textarea {
-    flex: 1; resize: none; max-height: 120px; min-height: 40px;
-    background: var(--panel2); border: 1px solid var(--border); border-radius: 20px;
-    color: var(--text); padding: 10px 16px; font-size: 15px; font-family: inherit;
-    outline: none;
+  #loadingOverlay.hidden{display:none;}
+  #loadingTitle{
+    font-size:22px;font-weight:700;
+    letter-spacing:.3px;
   }
-  #inputbar textarea:focus { border-color: var(--accent); }
-  #sendBtn {
-    width: 40px; height: 40px; border-radius: 50%; border: none;
-    background: var(--accent); color: white; font-size: 18px;
-    display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0; cursor: pointer;
+  #loadingSpinner{
+    width:36px;height:36px;
+    border:3px solid #2c303a;
+    border-top-color:var(--accent);
+    border-radius:50%;
+    animation:spin .9s linear infinite;
   }
-  #sendBtn:disabled { opacity: 0.4; }
-  #sendBtn:active { transform: scale(0.92); }
-
-  #resetBtn {
-    background: none; border: none; color: var(--muted); font-size: 12px;
-    cursor: pointer; padding: 4px 8px;
+  @keyframes spin{to{transform:rotate(360deg);}}
+  #loadingPct{
+    font-size:15px;font-weight:600;
+    color:var(--accent);
+    min-height:20px;
   }
-
-  .typing { display: flex; gap: 4px; padding: 4px 0; }
-  .typing span {
-    width: 6px; height: 6px; border-radius: 50%; background: var(--muted);
-    animation: bounce 1.2s infinite;
+  #loadingDetail{
+    font-size:12.5px;
+    color:var(--muted);
+    max-width:280px;
+    min-height:16px;
   }
-  .typing span:nth-child(2) { animation-delay: .15s; }
-  .typing span:nth-child(3) { animation-delay: .3s; }
-  @keyframes bounce { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-5px)} }
-
-  #memBtn {
-    background: none; border: none; color: var(--muted); font-size: 15px;
-    cursor: pointer; padding: 4px 6px; position: relative;
+  #loadingBarWrap{
+    width:240px;height:6px;
+    background:#262a33;
+    border-radius:3px;
+    overflow:hidden;
   }
-  #memBtn .badge {
-    position: absolute; top: -2px; right: -2px; background: var(--accent2);
-    color: #0e0f13; font-size: 9px; font-weight: 700; border-radius: 8px;
-    min-width: 14px; height: 14px; display: none; align-items: center; justify-content: center;
-    padding: 0 3px;
+  #loadingBarFill{
+    height:100%;width:0%;
+    background:var(--accent);
+    transition:width .2s;
   }
-  #memBtn .badge.show { display: flex; }
-
-  .toast {
-    position: fixed; bottom: 78px; left: 50%; transform: translateX(-50%);
-    background: var(--panel2); border: 1px solid var(--accent2); color: var(--text);
-    font-size: 12px; padding: 8px 14px; border-radius: 20px; z-index: 50;
-    opacity: 0; transition: opacity .3s, transform .3s; pointer-events: none;
-    white-space: nowrap; max-width: 90vw; overflow: hidden; text-overflow: ellipsis;
+  #dataWarning{
+    background:var(--panel);
+    border:1px solid #2c303a;
+    border-radius:14px;
+    padding:18px;
+    max-width:300px;
   }
-  .toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
-
-  #memModal {
-    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6);
-    z-index: 100; align-items: flex-end; justify-content: center;
+  #dataWarning p{
+    font-size:13.5px;color:var(--text);
+    margin:0 0 14px;line-height:1.5;
   }
-  #memModal.show { display: flex; }
-  #memPanel {
-    background: var(--panel); border-top: 1px solid var(--border);
-    border-radius: 18px 18px 0 0; width: 100%; max-width: 480px;
-    max-height: 75vh; display: flex; flex-direction: column;
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+  #dataWarning .btnRow{
+    display:flex;gap:10px;
   }
-  #memPanel .memHeader {
-    padding: 16px; border-bottom: 1px solid var(--border);
-    display: flex; justify-content: space-between; align-items: center;
+  #dataWarning button{
+    flex:1;
+    border:none;border-radius:10px;
+    padding:10px;font-size:14px;font-weight:600;
   }
-  #memPanel .memHeader h2 { font-size: 15px; margin: 0; }
-  #memPanel .memHeader button {
-    background: none; border: none; color: var(--muted); font-size: 20px; cursor: pointer;
-  }
-  #memList { overflow-y: auto; padding: 10px 16px; flex: 1; }
-  .memItem {
-    display: flex; justify-content: space-between; align-items: center; gap: 10px;
-    padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13.5px;
-  }
-  .memItem .memText { flex: 1; line-height: 1.4; }
-  .memItem button {
-    background: none; border: none; color: #ef5350; font-size: 16px; cursor: pointer; flex-shrink: 0;
-  }
-  #memEmpty { color: var(--muted); font-size: 13px; text-align: center; padding: 30px 10px; }
-  #memAddRow {
-    display: flex; gap: 8px; padding: 12px 16px;
-    border-top: 1px solid var(--border);
-  }
-  #memAddInput {
-    flex: 1; background: var(--panel2); border: 1px solid var(--border);
-    border-radius: 10px; color: var(--text); padding: 9px 12px; font-size: 13.5px;
-    outline: none; font-family: inherit;
-  }
-  #memAddBtn {
-    background: var(--accent); border: none; color: white; border-radius: 10px;
-    padding: 0 16px; font-size: 13px; cursor: pointer;
-  }
+  #continueBtn{background:var(--accent);color:#0d1310;}
+  #cancelBtn{background:#2c303a;color:var(--text);}
 </style>
 </head>
 <body>
 <div id="app">
-  <header>
-    <h1><span class="dot" id="statusDot"></span> Viddle</h1>
-    <div style="display:flex; align-items:center; gap:10px;">
-      <span id="status-text">loading engine…</span>
-      <button id="memBtn" style="display:none;">🧠<span class="badge" id="memBadge"></span></button>
-      <button id="resetBtn" style="display:none;">Reset chat</button>
-      <button id="changeModelBtn" style="display:none; background:none; border:none; color: var(--muted); font-size: 12px; cursor:pointer; padding:4px 8px;">Change model</button>
-    </div>
-  </header>
-
-  <div id="setup">
-    <p id="setupIntro">Viddle runs a 1.5B language model fully on-device. Pick a .gguf file you already have — nothing ever gets uploaded anywhere.</p>
-
-    <div class="model-card" id="pickFileCard" style="opacity:0.5;">
-      <div class="info">
-        <div class="name">Qwen2.5 1.5B Instruct</div>
-        <div class="desc" id="pickFileDesc">Tap to select the .gguf file from your device</div>
-      </div>
-      <div class="size">Local</div>
-    </div>
-    <input type="file" id="fileInput" accept=".gguf" style="display:none;">
-
-    <p id="setupTip" style="font-size:12px; opacity:0.7;">After the first load it's saved locally and loads automatically every time after — no picking again.</p>
+  <div id="loadingOverlay">
+    <div id="loadingTitle">Viddle AI</div>
+    <div id="loadingSpinner"></div>
+    <div id="loadingPct"></div>
+    <div id="loadingBarWrap"><div id="loadingBarFill"></div></div>
+    <div id="loadingDetail">Starting up…</div>
   </div>
-
-  <div id="progress-wrap">
-    <div id="progress-label"><span id="progress-msg">Loading model…</span><span id="progress-pct"></span></div>
-    <div id="progress-bar-bg"><div id="progress-bar"></div></div>
-    <div id="progress-note"></div>
-    <div id="progress-debug" style="font-size:10px; color:#6a6d7a; margin-top:4px; text-align:center; font-family:monospace; word-break:break-all;"></div>
+  <div id="statusBar">
+    <div id="statusDot"></div>
+    <span id="statusText">Starting up…</span>
   </div>
-
-  <div id="chat"></div>
-
-  <div id="inputbar">
-    <textarea id="userInput" placeholder="Message…" rows="1" disabled></textarea>
-    <button id="sendBtn" disabled>➤</button>
+  <div id="progressWrap"><div id="progressBar"></div></div>
+  <div id="messages"></div>
+  <div id="inputBar">
+    <textarea id="inputField" rows="1" placeholder="Loading model…" disabled></textarea>
+    <button id="sendBtn" disabled>Send</button>
   </div>
 </div>
-
-<div class="toast" id="toast"></div>
-
-<div id="memModal">
-  <div id="memPanel">
-    <div class="memHeader">
-      <h2>🧠 What it remembers</h2>
-      <button id="memCloseBtn">✕</button>
-    </div>
-    <div id="memList"></div>
-    <div id="memAddRow">
-      <input id="memAddInput" placeholder="Add a memory manually…" />
-      <button id="memAddBtn">Add</button>
-    </div>
-  </div>
-</div>
-
-<div id="fatalError" style="display:none; position:fixed; top:0; left:0; right:0; z-index:200; margin:14px 16px; padding:12px 14px; background:#2a1418; border:1px solid #ef5350; border-radius:10px; color:#ff8a80; font-size:13px; line-height:1.5; box-shadow:0 4px 20px rgba(0,0,0,0.5);"></div>
 
 <script type="module">
-// IMPORTANT: this used to be a blocking top-level `await import(...)`. That meant
-// ALL of the code below it — including every button's addEventListener call — did
-// not run until the CDN import finished. On a slow/flaky mobile connection, that
-// left a window (sometimes indefinite) where the cards look tappable, show their
-// CSS :active flash on tap, but have no click listener behind them at all, so
-// nothing happens. Fix: kick the import off in the background (no top-level
-// await) so the rest of the script — and all the event listeners — run
-// immediately, and gate the actual actions on a `wllamaReady` flag instead.
-let Wllama, WasmFromCDN;
-let wllamaReady = false;
-let wllamaLoadError = null;
+import * as webllm from "https://esm.run/@mlc-ai/web-llm";
 
-const WLLAMA_VERSION = "2.3.7";
-// Two CDN mirrors, each tried a couple of times before giving up. Flaky mobile
-// connections sometimes drop a single sub-resource fetch (as happened here)
-// without the whole CDN being blocked, so a retry alone often fixes it; the
-// second mirror is a fallback in case jsdelivr itself is having a bad moment.
-const CDN_BASES = [
-  `https://cdn.jsdelivr.net/npm/@wllama/wllama@${WLLAMA_VERSION}`,
-  `https://unpkg.com/@wllama/wllama@${WLLAMA_VERSION}`,
-];
+const statusDot = document.getElementById('statusDot');
+const statusText = document.getElementById('statusText');
+const progressBar = document.getElementById('progressBar');
+const messages = document.getElementById('messages');
+const inputField = document.getElementById('inputField');
+const sendBtn = document.getElementById('sendBtn');
+const loadingOverlay = document.getElementById('loadingOverlay');
+const loadingPct = document.getElementById('loadingPct');
+const loadingBarFill = document.getElementById('loadingBarFill');
+const loadingDetail = document.getElementById('loadingDetail');
+const appEl = document.getElementById('app');
 
-async function importWithRetries(path, { retries = 2, delayMs = 800 } = {}) {
-  let lastErr;
-  for (const base of CDN_BASES) {
-    for (let attempt = 0; attempt <= retries; attempt++) {
-      try {
-        const mod = await import(`${base}${path}`);
-        return { mod, base };
-      } catch (err) {
-        lastErr = err;
-        console.warn(`Import failed (${base}${path}), attempt ${attempt + 1}:`, err?.message || err);
-        if (attempt < retries) await new Promise(r => setTimeout(r, delayMs));
-      }
-    }
-  }
-  throw lastErr;
+// Some Android browsers/WebViews don't reliably shrink 100dvh when the
+// keyboard opens, leaving a gap above it. Track the real visible area
+// via visualViewport and size #app to match exactly.
+if (window.visualViewport) {
+  const syncViewportHeight = () => {
+    appEl.style.height = window.visualViewport.height + 'px';
+  };
+  window.visualViewport.addEventListener('resize', syncViewportHeight);
+  window.visualViewport.addEventListener('scroll', syncViewportHeight);
+  syncViewportHeight();
 }
 
-const wllamaReadyPromise = (async () => {
-  try {
-    const { mod, base } = await importWithRetries(`/esm/index.js`);
-    Wllama = mod.Wllama;
-    // Deliberately NOT importing esm/wasm-from-cdn.js here. That file is a thin
-    // wrapper that self-locates its own CDN URL via import.meta.url, and both
-    // jsdelivr and unpkg have known, documented bugs resolving that pattern for
-    // some packages (see jsdelivr/jsdelivr#18561) — it failed consistently on
-    // both mirrors even though plain index.js loaded fine every time. Instead,
-    // build the same config object ourselves, using plain string URLs against
-    // whichever CDN base actually worked above. This is also the library's own
-    // officially-documented supported approach (the wasm-from-cdn.js wrapper is
-    // explicitly marked "not recommended" in wllama's README).
-    WasmFromCDN = {
-      "single-thread/wllama.js": `${base}/esm/single-thread/wllama.js`,
-      "single-thread/wllama.wasm": `${base}/esm/single-thread/wllama.wasm`,
-      "multi-thread/wllama.js": `${base}/esm/multi-thread/wllama.js`,
-      "multi-thread/wllama.wasm": `${base}/esm/multi-thread/wllama.wasm`,
-      "multi-thread/wllama.worker.mjs": `${base}/esm/multi-thread/wllama.worker.mjs`,
-    };
-    wllamaReady = true;
-    onEngineReady();
-  } catch (err) {
-    console.error("Failed to load wllama from CDN:", err);
-    wllamaLoadError = err;
-    const banner = document.getElementById("fatalError");
-    banner.style.display = "block";
-    banner.innerHTML =
-      "Couldn't load the AI engine after retrying on two different CDNs, so nothing on this page will work. " +
-      "This usually means the connection dropped mid-request, or an ad-blocker/privacy extension is blocking cdn.jsdelivr.net and unpkg.com. " +
-      "Check your connection and try again.<br><br><b>Details:</b> " + (err?.message || String(err)) +
-      "<br><br><button id='retryEngineBtn' style='background:#ef5350;border:none;color:white;padding:8px 14px;border-radius:8px;font-size:13px;'>Reload page</button>";
-    document.getElementById("retryEngineBtn").addEventListener("click", () => location.reload());
-    onEngineError();
+// Small model chosen for phone RAM/VRAM limits. Swap for a bigger one later if the device handles it.
+// Pulls weights and WASM straight from MLC's own hosting — no bucket, no custom config needed.
+const MODEL_ID = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
+
+let engine = null;
+let history = [];
+
+function isNearBottom(){
+  const threshold = 80;
+  return messages.scrollHeight - messages.scrollTop - messages.clientHeight < threshold;
+}
+
+function scrollToBottom(force){
+  if (force || isNearBottom()) {
+    messages.scrollTop = messages.scrollHeight;
   }
-})();
+}
 
-const MODEL_LABEL = "Qwen2.5 1.5B";
-// If a file with this exact name sits in the same folder as this HTML file
-// (same origin/path it's served from), it's fetched and loaded automatically
-// on startup — no manual picking needed. Rename this if your file is named
-// differently.
-const AUTO_GGUF_FILENAME = "qwen2.5-1.5b-instruct-q4_k_m.gguf";
-const DB_NAME = "viddle-model-store";
-const DB_STORE = "models";
-const DB_KEY = "gguf-1.5b";
+function addMessage(role, text){
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  div.textContent = text;
+  messages.appendChild(div);
+  scrollToBottom(true);
+  return div;
+}
 
-const BASE_SYSTEM_PROMPT = "You are a helpful, concise offline assistant running entirely on the user's device.";
-const MEM_KEY = "miniai_memories_v1";
+function setStatus(text, mode){
+  statusText.textContent = text;
+  statusDot.className = mode || '';
+}
 
-let wllama = null;
-let history = []; // {role, content}
-let generating = false;
-let memories = loadMemories(); // [{id, text, ts}]
+function showOverlay(){ loadingOverlay.classList.remove('hidden'); }
+function hideOverlay(){ loadingOverlay.classList.add('hidden'); }
 
-const $ = (id) => document.getElementById(id);
-const statusDot = $("statusDot");
-const statusText = $("status-text");
-const setupEl = $("setup");
-const setupIntro = $("setupIntro");
-const setupTip = $("setupTip");
-const pickFileCard = $("pickFileCard");
-const pickFileDesc = $("pickFileDesc");
-const fileInput = $("fileInput");
-const changeModelBtn = $("changeModelBtn");
-const progressWrap = $("progress-wrap");
-const progressBar = $("progress-bar");
-const progressPct = $("progress-pct");
-const progressMsg = $("progress-msg");
-const progressNote = $("progress-note");
-const progressDebug = $("progress-debug");
-const chatEl = $("chat");
-const inputBar = $("inputbar");
-const userInput = $("userInput");
-const sendBtn = $("sendBtn");
-const resetBtn = $("resetBtn");
-const memBtn = $("memBtn");
-const memBadge = $("memBadge");
-const toastEl = $("toast");
-const memModal = $("memModal");
-const memList = $("memList");
-const memAddInput = $("memAddInput");
-const memAddBtn = $("memAddBtn");
-const memCloseBtn = $("memCloseBtn");
+function updateLoadingUI(pct, detailText){
+  loadingPct.textContent = pct + '%';
+  loadingBarFill.style.width = pct + '%';
+  loadingDetail.textContent = detailText || '';
+  progressBar.style.width = pct + '%';
+}
 
-// ---------- Local model storage (IndexedDB) — no network needed ----------
+// Warn before pulling ~700MB on cellular. Skipped entirely if the model is
+// already cached (checked separately) or if connection info isn't available.
+function isOnCellular(){
+  const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if (!conn) return false;
+  return conn.type === 'cellular' || /^[23]g|slow-2g/.test(conn.effectiveType || '');
+}
 
-function openModelDB() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = () => req.result.createObjectStore(DB_STORE);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+function askToContinueOnCellular(){
+  return new Promise((resolve) => {
+    loadingDetail.innerHTML = '';
+    const box = document.createElement('div');
+    box.id = 'dataWarning';
+    box.innerHTML = `
+      <p>This model is about 700MB. You're on cellular data — downloading now may use a chunk of your data plan. Once downloaded, it's cached and works offline.</p>
+      <div class="btnRow">
+        <button id="cancelBtn">Wait for wifi</button>
+        <button id="continueBtn">Continue anyway</button>
+      </div>
+    `;
+    loadingDetail.appendChild(box);
+    document.getElementById('continueBtn').onclick = () => resolve(true);
+    document.getElementById('cancelBtn').onclick = () => resolve(false);
   });
 }
 
-async function getStoredModelBlob() {
-  try {
-    const db = await openModelDB();
-    return await new Promise((resolve, reject) => {
-      const tx = db.transaction(DB_STORE, "readonly");
-      const req = tx.objectStore(DB_STORE).get(DB_KEY);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => reject(req.error);
+// Cache the page shell itself so Viddle can open even with no network
+// connection — same idea as the model weights being cached, but for the
+// HTML/JS that runs the app.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch((e) => {
+      console.log('Service worker registration failed:', e);
     });
-  } catch {
-    return null;
-  }
-}
-
-async function storeModelBlob(blob) {
-  const db = await openModelDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(DB_STORE, "readwrite");
-    tx.objectStore(DB_STORE).put(blob, DB_KEY);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
   });
 }
 
-async function clearStoredModel() {
-  try {
-    const db = await openModelDB();
-    await new Promise((resolve) => {
-      const tx = db.transaction(DB_STORE, "readwrite");
-      tx.objectStore(DB_STORE).delete(DB_KEY);
-      tx.oncomplete = resolve;
-      tx.onerror = resolve;
-    });
-  } catch {}
-}
+async function init(){
+  showOverlay();
 
-// While the wllama engine is still downloading from the CDN, the cards are
-// dimmed and any tap just shows a toast instead of silently doing nothing.
-function onEngineReady() {
-  pickFileCard.style.opacity = "1";
-  if (statusText.textContent === "loading engine…") {
-    statusDot.className = "dot";
-    statusText.textContent = "not loaded";
-  }
-}
-function onEngineError() {
-  statusDot.className = "dot error";
-  statusText.textContent = "engine failed to load";
-}
-
-pickFileCard.addEventListener("click", () => {
-  if (!wllamaReady) { showToast("Still loading the AI engine — one sec…"); return; }
-  fileInput.click();
-});
-fileInput.addEventListener("change", (e) => {
-  const file = e.target.files[0];
-  if (file) startModelFromBlob(file, { fromCache: false });
-});
-changeModelBtn.addEventListener("click", async () => {
-  await clearStoredModel();
-  location.reload();
-});
-
-// Tries to fetch a .gguf file sitting next to this HTML file (same folder,
-// same origin) and load it automatically. Returns true if it found and started
-// loading one, false if no such file exists here (so the caller can fall back
-// to the manual picker without treating a 404 as an error).
-async function tryAutoLoadLocalModel() {
-  await wllamaReadyPromise;
-  const url = new URL(AUTO_GGUF_FILENAME, location.href).href;
-  let res;
-  try {
-    res = await fetch(url);
-  } catch {
-    return false; // network/file:// access issue — silently fall back to picker
-  }
-  if (!res.ok) return false; // not found next to the page — fall back to picker
-
-  setupEl.style.display = "none";
-  progressWrap.style.display = "block";
-  statusDot.className = "dot loading";
-  statusText.textContent = "loading model";
-  progressBar.classList.remove("indeterminate");
-  progressBar.style.width = "0%";
-  progressPct.textContent = "0%";
-  progressMsg.textContent = "Found " + AUTO_GGUF_FILENAME + " — loading it automatically…";
-  progressNote.textContent = "";
-  progressDebug.textContent = "";
-
-  const startedAt = Date.now();
-  let lastUiUpdate = 0;
-  const total = Number(res.headers.get("content-length")) || 0;
-  const reader = res.body.getReader();
-  const chunks = [];
-  let received = 0;
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    received += value.length;
-
-    const now = Date.now();
-    if (now - lastUiUpdate < 150 && received < total) continue;
-    lastUiUpdate = now;
-
-    const pct = total ? Math.floor((received / total) * 100) : 0;
-    progressBar.style.width = pct + "%";
-    progressPct.textContent = total ? pct + "%" : "";
-    if (!total) progressBar.classList.add("indeterminate");
-
-    const secs = (now - startedAt) / 1000;
-    const mbReceived = received / (1024 * 1024);
-    const mbTotal = total / (1024 * 1024);
-    const speed = secs > 0.2 ? mbReceived / secs : 0;
-    let note = total ? `${mbReceived.toFixed(0)}MB / ${mbTotal.toFixed(0)}MB` : `${mbReceived.toFixed(0)}MB`;
-    if (speed > 0.05) {
-      note += ` — ${speed.toFixed(1)} MB/s`;
-      if (total > received) {
-        const remainSec = (total - received) / (1024 * 1024) / speed;
-        note += ` — ~${Math.ceil(remainSec)}s left`;
-      }
-    }
-    progressNote.textContent = note;
-  }
-
-  const blob = new Blob(chunks);
-  await startModelFromBlob(blob, { fromCache: false });
-  return true;
-}
-
-// Check for a previously-saved model first (zero prompts, loads from IndexedDB).
-// If there's none cached yet, look for a .gguf sitting next to the page and
-// load that automatically. Only if neither exists does the manual picker show.
-(async function initApp() {
-  const cached = await getStoredModelBlob();
-  if (cached) {
-    startModelFromBlob(cached, { fromCache: true });
+  if (!navigator.gpu) {
+    setStatus('WebGPU not available in this WebView', '');
+    loadingDetail.textContent = "This device/browser doesn't expose WebGPU, so the model can't run here.";
+    loadingPct.textContent = '';
     return;
   }
-  await tryAutoLoadLocalModel();
-})();
 
-resetBtn.addEventListener("click", () => {
-  history = [];
-  chatEl.innerHTML = "";
-  addMessage("bot", "Chat cleared. What's up?");
-});
+  // Android system WebView (used by the App Inventor wrapper) includes "; wv)"
+  // in its user agent — regular Chrome does not. Use this to only request
+  // persistent storage inside the wrapped app, leaving Chrome's cache temporary.
+  const isWrappedWebView = /; wv\)/.test(navigator.userAgent);
 
-// ---------- Memory (persistent, local-only, auto-learned) ----------
+  if (isWrappedWebView && navigator.storage && navigator.storage.persist) {
+    const granted = await navigator.storage.persist();
+    console.log('Persistent storage granted:', granted);
+  }
 
-function loadMemories() {
+  // Check whether the model is already sitting in cache before deciding
+  // whether to bother the person with a cellular-data warning at all.
+  let alreadyCached = false;
   try {
-    return JSON.parse(localStorage.getItem(MEM_KEY) || "[]");
-  } catch {
-    return [];
-  }
-}
-
-function saveMemories() {
-  localStorage.setItem(MEM_KEY, JSON.stringify(memories));
-  renderMemBadge();
-}
-
-function renderMemBadge() {
-  if (memories.length > 0) {
-    memBadge.textContent = memories.length > 99 ? "99+" : String(memories.length);
-    memBadge.classList.add("show");
-  } else {
-    memBadge.classList.remove("show");
-  }
-}
-
-function addMemory(text, { silent = false } = {}) {
-  const clean = text.trim();
-  if (!clean) return false;
-  const dup = memories.some(m => m.text.toLowerCase() === clean.toLowerCase());
-  if (dup) return false;
-  memories.push({ id: Date.now() + "-" + Math.random().toString(36).slice(2, 7), text: clean, ts: Date.now() });
-  saveMemories();
-  if (!silent) showToast("🧠 Remembered: " + clean);
-  return true;
-}
-
-function removeMemory(id) {
-  memories = memories.filter(m => m.id !== id);
-  saveMemories();
-  renderMemList();
-}
-
-function renderMemList() {
-  memList.innerHTML = "";
-  if (memories.length === 0) {
-    memList.innerHTML = `<div id="memEmpty">Nothing remembered yet. Chat naturally and it'll pick up facts automatically — or add one below.</div>`;
-    return;
-  }
-  // newest first
-  [...memories].reverse().forEach(m => {
-    const row = document.createElement("div");
-    row.className = "memItem";
-    const t = document.createElement("div");
-    t.className = "memText";
-    t.textContent = m.text;
-    const del = document.createElement("button");
-    del.textContent = "✕";
-    del.addEventListener("click", () => removeMemory(m.id));
-    row.appendChild(t);
-    row.appendChild(del);
-    memList.appendChild(row);
-  });
-}
-
-let toastTimer = null;
-function showToast(msg) {
-  toastEl.textContent = msg;
-  toastEl.classList.add("show");
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toastEl.classList.remove("show"), 2600);
-}
-
-memBtn.addEventListener("click", () => {
-  renderMemList();
-  memModal.classList.add("show");
-});
-memCloseBtn.addEventListener("click", () => memModal.classList.remove("show"));
-memModal.addEventListener("click", (e) => {
-  if (e.target === memModal) memModal.classList.remove("show");
-});
-memAddBtn.addEventListener("click", () => {
-  if (addMemory(memAddInput.value, { silent: true })) {
-    memAddInput.value = "";
-    renderMemList();
-  }
-});
-memAddInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") { e.preventDefault(); memAddBtn.click(); }
-});
-
-// Ask the model itself to pull out any durable facts from the latest exchange.
-// Runs quietly after each reply; anything it finds gets appended to memories.
-async function extractFacts(userText, botText) {
-  if (!wllama) return;
-  const extractionPrompt =
-`<|im_start|>system
-Extract durable facts about the USER worth remembering long-term (name, preferences, projects, people, ongoing goals, possessions, etc). Ignore small talk, questions, and anything not about the user. Reply with ONLY a JSON array of short fact strings, e.g. ["likes X","owns a Y"]. If nothing worth remembering, reply with [].<|im_end|>
-<|im_start|>user
-User said: "${userText}"
-Assistant replied: "${botText}"<|im_end|>
-<|im_start|>assistant
-`;
-  try {
-    const out = await wllama.createCompletion(extractionPrompt, {
-      nPredict: 150,
-      sampling: { temp: 0.1 },
-      stopTokens: ["<|im_end|>", "<|im_start|>"],
-    });
-    const match = out.match(/\[[\s\S]*\]/);
-    if (!match) return;
-    const facts = JSON.parse(match[0]);
-    if (Array.isArray(facts)) {
-      facts.forEach(f => { if (typeof f === "string" && f.trim().length > 2) addMemory(f); });
+    if (window.caches) {
+      const keys = await caches.keys();
+      alreadyCached = keys.some(k => k.toLowerCase().includes('webllm') || k.toLowerCase().includes('mlc'));
     }
-  } catch (err) {
-    // silent fail — extraction is best-effort, shouldn't break the chat
-    console.warn("fact extraction skipped:", err?.message || err);
+  } catch (e) { /* cache check is best-effort */ }
+
+  if (!alreadyCached && isOnCellular()) {
+    updateLoadingUI(0, '');
+    const proceed = await askToContinueOnCellular();
+    if (!proceed) {
+      loadingDetail.textContent = "Paused — reopen this page once you're on wifi.";
+      loadingPct.textContent = '';
+      return;
+    }
   }
-}
 
-function buildSystemPrompt() {
-  if (memories.length === 0) return BASE_SYSTEM_PROMPT;
-  const facts = memories.map(m => "- " + m.text).join("\n");
-  return `${BASE_SYSTEM_PROMPT}\n\nThings you know about the user from past conversations:\n${facts}\n\nUse these naturally when relevant. Don't recite them unprompted.`;
-}
+  updateLoadingUI(0, alreadyCached ? 'Loading cached model…' : 'Downloading model (first run only)…');
+  setStatus('Loading…', 'loading');
 
-// Piped to progressNote as a scrolling last-line log so wllama's own internal
-// logging (worker spawn, thread negotiation, gguf parsing) is visible on a
-// phone with no attached devtools — a silent hang otherwise gives zero signal.
-function logToScreen(level, args) {
-  const msg = args.map(a => {
-    if (typeof a === "string") return a;
-    if (a instanceof ErrorEvent) return `ErrorEvent: ${a.message || "(no message)"} @ ${a.filename || "?"}:${a.lineno || "?"}`;
-    if (a instanceof Event) return `${a.type || "Event"} on ${a.target?.constructor?.name || "?"} (likely a Worker failed to start — probably needs a real http(s) origin, not content://)`;
-    if (a instanceof Error) return `${a.name}: ${a.message}`;
-    try { return JSON.stringify(a); } catch { return String(a); }
-  }).join(" ");
-  console[level] ? console[level](msg) : console.log(msg);
-  if (progressWrap.style.display !== "none") {
-    progressDebug.textContent = `[${level}] ${msg}`;
-    if (level === "error") progressDebug.style.color = "#ef5350";
-  }
-}
-
-// A worker-spawn or pthread-handshake failure during wllama.loadModel doesn't
-// always reject the awaited promise — it can just hang. These catch it if the
-// browser does surface it as a global error instead, so it's not silent.
-window.addEventListener("error", (e) => {
-  if (progressWrap.style.display !== "none") {
-    logToScreen("error", [`window error: ${e.message}`]);
-  }
-});
-window.addEventListener("unhandledrejection", (e) => {
-  if (progressWrap.style.display !== "none") {
-    logToScreen("error", [`unhandled rejection: ${e.reason?.message || e.reason}`]);
-  }
-});
-
-// Reads a File/Blob in chunks via the streams API, reporting real byte progress.
-// This is the diagnostic step: it tells us whether a stall is a genuine bug
-// (barely any bytes read after minutes) or just slow-but-working content://
-// access (Android's SAF file provider can be far slower than a normal file
-// read for large files).
-async function readFileWithProgress(file, onProgress) {
-  const total = file.size;
-  const reader = file.stream().getReader();
-  const chunks = [];
-  let received = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    received += value.length;
-    onProgress(received, total);
-  }
-  return new Blob(chunks);
-}
-
-async function startModelFromBlob(fileOrBlob, { fromCache }) {
-  await wllamaReadyPromise; // safety net; should already be resolved by the time this is called
-  setupEl.style.display = "none";
-  progressWrap.style.display = "block";
-  statusDot.className = "dot loading";
-  statusText.textContent = fromCache ? "loading saved model" : "loading model";
-  progressBar.classList.remove("indeterminate");
-  progressBar.style.width = "0%";
-  progressPct.textContent = "0%";
-  progressMsg.textContent = fromCache ? "Reading saved model…" : "Reading model file…";
-  progressNote.textContent = "";
-  progressDebug.textContent = "";
-  progressDebug.style.color = "#6a6d7a";
-
-  const readStartedAt = Date.now();
-  let lastUiUpdate = 0;
-
-  function updateReadProgress(received, total) {
-    const now = Date.now();
-    // Throttle UI writes to ~6/sec so the read loop itself isn't slowed by DOM churn.
-    if (now - lastUiUpdate < 150 && received < total) return;
-    lastUiUpdate = now;
-
-    const pct = total ? Math.floor((received / total) * 100) : 0;
-    progressBar.style.width = pct + "%";
-    progressPct.textContent = pct + "%";
-
-    const secs = (now - readStartedAt) / 1000;
-    const mbReceived = received / (1024 * 1024);
-    const mbTotal = total / (1024 * 1024);
-    const speed = secs > 0.2 ? mbReceived / secs : 0;
-
-    let note = `${mbReceived.toFixed(0)}MB / ${mbTotal.toFixed(0)}MB`;
-    if (speed > 0.05) {
-      note += ` — ${speed.toFixed(1)} MB/s`;
-      if (total > received) {
-        const remainSec = (total - received) / (1024 * 1024) / speed;
-        note += ` — ~${Math.ceil(remainSec)}s left`;
+  try {
+    engine = await webllm.CreateMLCEngine(MODEL_ID, {
+      initProgressCallback: (report) => {
+        const pct = Math.round((report.progress || 0) * 100);
+        updateLoadingUI(pct, report.text || ('Loading… ' + pct + '%'));
+        setStatus(report.text || ('Loading… ' + pct + '%'), 'loading');
       }
-    } else if (secs > 5) {
-      note += " — 0 MB/s: the read appears stalled, not just slow";
-    }
-    progressNote.textContent = note;
-  }
-
-  let loadTicker = null;
-  try {
-    let modelBlob = fileOrBlob;
-    if (typeof fileOrBlob.stream === "function") {
-      modelBlob = await readFileWithProgress(fileOrBlob, updateReadProgress);
-    }
-
-    // File is fully in memory now — the remaining wllama.loadModel step is
-    // CPU-bound WASM parsing/tokenizer setup, not I/O, so byte progress no
-    // longer applies. Switch to an indeterminate bar + its own elapsed ticker
-    // so it's clear this phase (not the read) is what's slow, if it is.
-    progressBar.classList.add("indeterminate");
-    progressPct.textContent = "";
-    progressMsg.textContent = "Loading model into memory…";
-    const loadStartedAt = Date.now();
-    loadTicker = setInterval(() => {
-      const secs = Math.floor((Date.now() - loadStartedAt) / 1000);
-      let note = `${secs}s elapsed in wllama init`;
-      if (secs > 30 && secs <= 90) note += " — still working, this step can take a few minutes on phone hardware";
-      else if (secs > 90) note += " — single-threaded mobile WASM is slow here; if this passes ~5 min with no error, let me know";
-      progressNote.textContent = note;
-    }, 1000);
-
-    // Force single-thread WASM. Multi-thread mode needs SharedArrayBuffer +
-    // COOP/COEP cross-origin isolation, which a page opened directly from a
-    // content:// URI (opaque origin, no server headers) can't provide. In that
-    // case wllama's pthread worker handshake can hang indefinitely with no
-    // error ever thrown — which is exactly what "stuck at Loading model into
-    // memory" with no crash looks like. n_threads: 1 sidesteps that path.
-    wllama = new Wllama(WasmFromCDN, {
-      parallelDownloads: 3,
-      logger: {
-        debug: (...a) => logToScreen("debug", a),
-        log: (...a) => logToScreen("log", a),
-        warn: (...a) => logToScreen("warn", a),
-        error: (...a) => logToScreen("error", a),
-      },
     });
-    await wllama.loadModel([modelBlob], { n_ctx: 2048, n_threads: 1 });
 
-    if (!fromCache) {
-      progressMsg.textContent = "Saving for offline use…";
-      try {
-        await storeModelBlob(modelBlob);
-      } catch (e) {
-        console.warn("Could not save model locally for next time:", e);
-      }
-    }
-
-    clearInterval(loadTicker);
-    progressBar.classList.remove("indeterminate");
-    progressWrap.style.display = "none";
-    chatEl.style.display = "flex";
-    inputBar.style.display = "flex";
-    resetBtn.style.display = "inline-block";
-    memBtn.style.display = "inline-block";
-    changeModelBtn.style.display = "inline-block";
-    renderMemBadge();
-    userInput.disabled = false;
+    hideOverlay();
+    setStatus('Ready — running fully offline', 'ready');
+    progressBar.style.width = '100%';
+    inputField.disabled = false;
+    inputField.placeholder = 'Message the AI…';
     sendBtn.disabled = false;
-    statusDot.className = "dot ready";
-    statusText.textContent = MODEL_LABEL + " ready";
-    addMessage("bot", "I'm running fully offline on your device. Ask me anything.");
-    userInput.focus();
+    addMessage('system', 'Model loaded. Everything from here runs on-device, no internet needed.');
   } catch (err) {
-    if (loadTicker) clearInterval(loadTicker);
+    setStatus('Failed to load model', '');
+    loadingDetail.textContent = 'Error: ' + err.message;
+    loadingPct.textContent = '';
     console.error(err);
-    progressBar.classList.remove("indeterminate");
-    progressWrap.style.display = "none";
-    setupEl.style.display = "flex";
-    statusDot.className = "dot error";
-    statusText.textContent = "load failed";
-    alert("Failed to load model: " + (err?.message || err) + "\n\nMake sure you picked the correct .gguf file.");
   }
 }
 
-function addMessage(role, text) {
-  const wrap = document.createElement("div");
-  wrap.className = "msg " + role;
-  const bubble = document.createElement("div");
-  bubble.className = "bubble";
-  bubble.textContent = text;
-  wrap.appendChild(bubble);
-  chatEl.appendChild(wrap);
-  chatEl.scrollTop = chatEl.scrollHeight;
-  return bubble;
-}
+async function sendMessage(){
+  const text = inputField.value.trim();
+  if (!text || !engine) return;
 
-function addTyping() {
-  const wrap = document.createElement("div");
-  wrap.className = "msg bot";
-  wrap.id = "typingIndicator";
-  const bubble = document.createElement("div");
-  bubble.className = "bubble typing";
-  bubble.innerHTML = "<span></span><span></span><span></span>";
-  wrap.appendChild(bubble);
-  chatEl.appendChild(wrap);
-  chatEl.scrollTop = chatEl.scrollHeight;
-}
-
-function removeTyping() {
-  const el = $("typingIndicator");
-  if (el) el.remove();
-}
-
-function buildPrompt() {
-  // ChatML-style prompt (Qwen2.5 instruct format)
-  let p = `<|im_start|>system\n${buildSystemPrompt()}<|im_end|>\n`;
-  for (const m of history) {
-    p += `<|im_start|>${m.role}\n${m.content}<|im_end|>\n`;
-  }
-  p += `<|im_start|>assistant\n`;
-  return p;
-}
-
-async function sendMessage() {
-  const text = userInput.value.trim();
-  if (!text || generating || !wllama) return;
-
-  userInput.value = "";
-  userInput.style.height = "auto";
-  addMessage("user", text);
-  history.push({ role: "user", content: text });
-
-  generating = true;
+  addMessage('user', text);
+  history.push({ role: 'user', content: text });
+  inputField.value = '';
+  inputField.style.height = 'auto';
   sendBtn.disabled = true;
-  addTyping();
+  inputField.disabled = true;
 
-  let botBubble = null;
-  let fullText = "";
+  const aiDiv = addMessage('ai', '…');
+  let full = '';
+  let pendingFrame = null;
+
+  const flush = () => {
+    aiDiv.textContent = full || '…';
+    scrollToBottom(false);
+    pendingFrame = null;
+  };
 
   try {
-    const prompt = buildPrompt();
-    await wllama.createCompletion(prompt, {
-      nPredict: 512,
-      sampling: { temp: 0.7, top_p: 0.9, penalty_repeat: 1.1 },
-      stopTokens: ["<|im_end|>", "<|im_start|>"],
-      onNewToken: (token, piece, currentText) => {
-        if (!botBubble) {
-          removeTyping();
-          botBubble = addMessage("bot", "");
-        }
-        fullText = currentText;
-        botBubble.textContent = fullText;
-        chatEl.scrollTop = chatEl.scrollHeight;
-      }
+    const stream = await engine.chat.completions.create({
+      messages: history,
+      stream: true,
+      temperature: 0.7,
     });
 
-    removeTyping();
-    if (!botBubble) botBubble = addMessage("bot", fullText || "…");
-    const finalBotText = fullText.trim();
-    history.push({ role: "assistant", content: finalBotText });
-    // Fire-and-forget: quietly scan the exchange for durable facts to remember.
-    extractFacts(text, finalBotText);
+    for await (const chunk of stream) {
+      const delta = chunk.choices[0]?.delta?.content || '';
+      full += delta;
+      // Batch DOM writes to one per animation frame instead of one per
+      // token — this is what was causing the choppy/janky text updates.
+      if (!pendingFrame) pendingFrame = requestAnimationFrame(flush);
+    }
+    if (pendingFrame) cancelAnimationFrame(pendingFrame);
+    flush();
+
+    history.push({ role: 'assistant', content: full });
   } catch (err) {
+    aiDiv.textContent = 'Error: ' + err.message;
     console.error(err);
-    removeTyping();
-    addMessage("bot", "⚠️ Error generating response: " + (err?.message || err));
-  } finally {
-    generating = false;
-    sendBtn.disabled = false;
-    userInput.focus();
   }
+
+  sendBtn.disabled = false;
+  inputField.disabled = false;
+  inputField.focus();
 }
 
-sendBtn.addEventListener("click", sendMessage);
-userInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) {
+sendBtn.addEventListener('click', sendMessage);
+inputField.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
     sendMessage();
   }
 });
-userInput.addEventListener("input", () => {
-  userInput.style.height = "auto";
-  userInput.style.height = Math.min(userInput.scrollHeight, 120) + "px";
+inputField.addEventListener('input', () => {
+  inputField.style.height = 'auto';
+  inputField.style.height = Math.min(inputField.scrollHeight, 100) + 'px';
 });
 
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("sw.js").catch((err) => {
-      console.warn("Service worker registration failed:", err);
-    });
-  });
-}
+init();
 </script>
 </body>
 </html>
