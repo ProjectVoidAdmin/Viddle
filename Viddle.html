@@ -239,12 +239,94 @@ if (window.visualViewport) {
 // Small model chosen for phone RAM/VRAM limits. Swap for a bigger one later if the device handles it.
 // Pulls weights and WASM straight from MLC's own hosting — no bucket, no custom config needed.
 const MODEL_ID = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
+const MAX_REPLY_CHARS = 500;
+// Llama's tokenizer averages roughly 4 characters per token for English
+// text (varies with punctuation/rare words, but this is the standard rule
+// of thumb). Deriving the token backstop from the char cap this way means
+// they always move together — no more risk of one being looser than the
+// other after a tweak to just one of them.
+const CHARS_PER_TOKEN_ESTIMATE = 4;
+const MAX_REPLY_TOKENS = Math.ceil(MAX_REPLY_CHARS / CHARS_PER_TOKEN_ESTIMATE);
+
+// Long-term memory: rather than resending the whole growing chat transcript
+// every turn (which is what tanks performance on a 1B on-device model), we
+// keep only the last RECENT_MESSAGES_TO_KEEP messages verbatim. Once history
+// grows past CONDENSE_THRESHOLD, the older stuff gets distilled by the model
+// itself into a short list of durable facts and dropped. The fact list is
+// tiny and gets prepended as a system message on every request — but it
+// lives only in memory for the current session, not persisted anywhere, so
+// a reload or app restart starts with a clean slate.
+const RECENT_MESSAGES_TO_KEEP = 6;   // ~3 user/AI turns kept verbatim
+const CONDENSE_THRESHOLD = 10;       // condense once history exceeds this
+const MAX_MEMORY_FACTS = 30;         // cap so the fact list itself can't grow forever
 
 let engine = null;
 let history = [];
+let memoryFacts = [];
 let isGenerating = false;
 let isLoadingModel = false;
+let isCondensingMemory = false;
 let needsReloadOnResume = false;
+
+// What actually gets sent to the model each turn: the distilled facts (if
+// any) as a system message, followed by only the recent messages — never
+// the full history.
+function buildRequestMessages(){
+  const msgs = [];
+  if (memoryFacts.length) {
+    msgs.push({
+      role: 'system',
+      content: 'Known facts to stay consistent with (don\'t restate them unprompted): ' + memoryFacts.join(' | ')
+    });
+  }
+  return msgs.concat(history);
+}
+
+// Distills older messages into short durable facts, appends them to
+// memoryFacts, and trims history down to the recent window. Runs in the
+// background after a reply finishes; skipped if already running or if the
+// engine isn't available.
+async function condenseHistoryIfNeeded(){
+  if (isCondensingMemory || !engine) return;
+  if (history.length <= CONDENSE_THRESHOLD) return;
+
+  isCondensingMemory = true;
+  setStatus('Organizing memory…', 'loading');
+  try {
+    const older = history.slice(0, history.length - RECENT_MESSAGES_TO_KEEP);
+    const transcript = older.map(m => (m.role === 'user' ? 'User: ' : 'AI: ') + m.content).join('\n');
+
+    const res = await engine.chat.completions.create({
+      messages: [
+        {
+          role: 'system',
+          content: 'Extract only durable facts worth remembering long-term from this conversation snippet — names, preferences, decisions, ongoing goals. Reply with a single pipe-separated list, under 250 characters total, no commentary or extra text. If there is nothing durable, reply with exactly: NONE'
+        },
+        { role: 'user', content: transcript }
+      ],
+      stream: false,
+      temperature: 0.2,
+      max_tokens: 100,
+    });
+
+    const summary = (res.choices[0]?.message?.content || '').trim();
+    if (summary && summary.toUpperCase() !== 'NONE') {
+      summary.split('|').map(s => s.trim()).filter(Boolean).forEach(fact => {
+        if (!memoryFacts.includes(fact)) memoryFacts.push(fact);
+      });
+      if (memoryFacts.length > MAX_MEMORY_FACTS) {
+        memoryFacts = memoryFacts.slice(memoryFacts.length - MAX_MEMORY_FACTS);
+      }
+    }
+
+    history = history.slice(history.length - RECENT_MESSAGES_TO_KEEP);
+  } catch (e) {
+    console.error('Memory condensation failed (non-fatal):', e);
+  } finally {
+    isCondensingMemory = false;
+    setStatus('Ready — running fully offline', 'ready');
+  }
+}
 
 function isNearBottom(){
   const threshold = 80;
@@ -454,11 +536,13 @@ async function sendMessage(){
   };
 
   isGenerating = true;
+  let wasTruncated = false;
   try {
     const stream = await engine.chat.completions.create({
-      messages: history,
+      messages: buildRequestMessages(),
       stream: true,
       temperature: 0.7,
+      max_tokens: MAX_REPLY_TOKENS, // derived from MAX_REPLY_CHARS above so both caps stay aligned
     });
 
     for await (const chunk of stream) {
@@ -467,11 +551,22 @@ async function sendMessage(){
       // Batch DOM writes to one per animation frame instead of one per
       // token — this is what was causing the choppy/janky text updates.
       if (!pendingFrame) pendingFrame = requestAnimationFrame(flush);
+      if (full.length >= MAX_REPLY_CHARS) {
+        full = full.slice(0, MAX_REPLY_CHARS).trimEnd();
+        wasTruncated = true;
+        try { engine.interruptGenerate(); } catch (e) { /* best-effort */ }
+        break;
+      }
     }
+    if (wasTruncated) full += '…';
     if (pendingFrame) cancelAnimationFrame(pendingFrame);
     flush();
 
     history.push({ role: 'assistant', content: full });
+    // Only actually does work once history crosses the threshold — cheap
+    // no-op otherwise. Awaited (rather than fire-and-forget) so it can't run
+    // a second model call concurrently with whatever the user sends next.
+    await condenseHistoryIfNeeded();
   } catch (err) {
     if (pendingFrame) cancelAnimationFrame(pendingFrame);
     console.error(err);
