@@ -229,7 +229,7 @@
   </header>
 
   <div id="setup">
-    <p id="setupIntro">Viddle runs a 1.5B language model fully on-device. Pick a .gguf file you already have, or download it once — either way, nothing ever gets uploaded anywhere.</p>
+    <p id="setupIntro">Viddle runs a 1.5B language model fully on-device. Pick a .gguf file you already have — nothing ever gets uploaded anywhere.</p>
 
     <div class="model-card" id="pickFileCard" style="opacity:0.5;">
       <div class="info">
@@ -240,15 +240,7 @@
     </div>
     <input type="file" id="fileInput" accept=".gguf" style="display:none;">
 
-    <div class="model-card" id="downloadModelCard" style="opacity:0.5;">
-      <div class="info">
-        <div class="name">Qwen2.5 1.5B Instruct</div>
-        <div class="desc" id="downloadModelDesc">Download it now (Q4_K_M, ~1.1GB) — requires internet once, then works offline</div>
-      </div>
-      <div class="size">Download</div>
-    </div>
-
-    <p id="setupTip" style="font-size:12px; opacity:0.7;">Either way, after the first load it's saved locally and loads automatically every time after — no picking, no downloading again.</p>
+    <p id="setupTip" style="font-size:12px; opacity:0.7;">After the first load it's saved locally and loads automatically every time after — no picking again.</p>
   </div>
 
   <div id="progress-wrap">
@@ -297,12 +289,37 @@ let Wllama, WasmFromCDN;
 let wllamaReady = false;
 let wllamaLoadError = null;
 
+const WLLAMA_VERSION = "2.3.7";
+// Two CDN mirrors, each tried a couple of times before giving up. Flaky mobile
+// connections sometimes drop a single sub-resource fetch (as happened here)
+// without the whole CDN being blocked, so a retry alone often fixes it; the
+// second mirror is a fallback in case jsdelivr itself is having a bad moment.
+const CDN_BASES = [
+  `https://cdn.jsdelivr.net/npm/@wllama/wllama@${WLLAMA_VERSION}`,
+  `https://unpkg.com/@wllama/wllama@${WLLAMA_VERSION}`,
+];
+
+async function importWithRetries(path, { retries = 2, delayMs = 800 } = {}) {
+  let lastErr;
+  for (const base of CDN_BASES) {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        return await import(`${base}${path}`);
+      } catch (err) {
+        lastErr = err;
+        console.warn(`Import failed (${base}${path}), attempt ${attempt + 1}:`, err?.message || err);
+        if (attempt < retries) await new Promise(r => setTimeout(r, delayMs));
+      }
+    }
+  }
+  throw lastErr;
+}
+
 const wllamaReadyPromise = (async () => {
   try {
-    const WLLAMA_VERSION = "2.3.7";
-    const mod = await import(`https://cdn.jsdelivr.net/npm/@wllama/wllama@${WLLAMA_VERSION}/esm/index.js`);
+    const mod = await importWithRetries(`/esm/index.js`);
     Wllama = mod.Wllama;
-    const wasmMod = await import(`https://cdn.jsdelivr.net/npm/@wllama/wllama@${WLLAMA_VERSION}/esm/wasm-from-cdn.js`);
+    const wasmMod = await importWithRetries(`/esm/wasm-from-cdn.js`);
     WasmFromCDN = wasmMod.default;
     wllamaReady = true;
     onEngineReady();
@@ -312,8 +329,8 @@ const wllamaReadyPromise = (async () => {
     const banner = document.getElementById("fatalError");
     banner.style.display = "block";
     banner.innerHTML =
-      "Couldn't load the AI engine from the CDN, so nothing on this page will work. " +
-      "This is almost always a network problem (offline, DNS, or an ad-blocker/privacy extension blocking cdn.jsdelivr.net) rather than a bug in the page itself. " +
+      "Couldn't load the AI engine after retrying on two different CDNs, so nothing on this page will work. " +
+      "This usually means the connection dropped mid-request, or an ad-blocker/privacy extension is blocking cdn.jsdelivr.net and unpkg.com. " +
       "Check your connection and try again.<br><br><b>Details:</b> " + (err?.message || String(err)) +
       "<br><br><button id='retryEngineBtn' style='background:#ef5350;border:none;color:white;padding:8px 14px;border-radius:8px;font-size:13px;'>Reload page</button>";
     document.getElementById("retryEngineBtn").addEventListener("click", () => location.reload());
@@ -322,7 +339,6 @@ const wllamaReadyPromise = (async () => {
 })();
 
 const MODEL_LABEL = "Qwen2.5 1.5B";
-const MODEL_DOWNLOAD_URL = "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf";
 const DB_NAME = "viddle-model-store";
 const DB_STORE = "models";
 const DB_KEY = "gguf-1.5b";
@@ -344,8 +360,6 @@ const setupTip = $("setupTip");
 const pickFileCard = $("pickFileCard");
 const pickFileDesc = $("pickFileDesc");
 const fileInput = $("fileInput");
-const downloadModelCard = $("downloadModelCard");
-const downloadModelDesc = $("downloadModelDesc");
 const changeModelBtn = $("changeModelBtn");
 const progressWrap = $("progress-wrap");
 const progressBar = $("progress-bar");
@@ -418,7 +432,6 @@ async function clearStoredModel() {
 // dimmed and any tap just shows a toast instead of silently doing nothing.
 function onEngineReady() {
   pickFileCard.style.opacity = "1";
-  downloadModelCard.style.opacity = "1";
   if (statusText.textContent === "loading engine…") {
     statusDot.className = "dot";
     statusText.textContent = "not loaded";
@@ -441,85 +454,6 @@ changeModelBtn.addEventListener("click", async () => {
   await clearStoredModel();
   location.reload();
 });
-
-downloadModelCard.addEventListener("click", () => {
-  if (!wllamaReady) { showToast("Still loading the AI engine — one sec…"); return; }
-  if (downloadModelCard.dataset.busy === "1") return;
-  downloadModelFromUrl(MODEL_DOWNLOAD_URL);
-});
-
-// Downloads the model over the network with real byte progress (same look as
-// the local-file read step), then hands the resulting Blob to the exact same
-// startModelFromBlob() path used for local files — same single-thread fix,
-// same on-screen debug logger, same IndexedDB caching for next time.
-async function downloadModelFromUrl(url) {
-  downloadModelCard.dataset.busy = "1";
-  setupEl.style.display = "none";
-  progressWrap.style.display = "block";
-  statusDot.className = "dot loading";
-  statusText.textContent = "downloading model";
-  progressBar.classList.remove("indeterminate");
-  progressBar.style.width = "0%";
-  progressPct.textContent = "0%";
-  progressMsg.textContent = "Downloading model…";
-  progressNote.textContent = "";
-  progressDebug.textContent = "";
-
-  const startedAt = Date.now();
-  let lastUiUpdate = 0;
-
-  try {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`HTTP ${res.status} while downloading model`);
-    const total = Number(res.headers.get("content-length")) || 0;
-    const reader = res.body.getReader();
-    const chunks = [];
-    let received = 0;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-      received += value.length;
-
-      const now = Date.now();
-      if (now - lastUiUpdate < 150 && received < total) continue;
-      lastUiUpdate = now;
-
-      const pct = total ? Math.floor((received / total) * 100) : 0;
-      progressBar.style.width = pct + "%";
-      progressPct.textContent = total ? pct + "%" : "";
-      if (!total) progressBar.classList.add("indeterminate");
-
-      const secs = (now - startedAt) / 1000;
-      const mbReceived = received / (1024 * 1024);
-      const mbTotal = total / (1024 * 1024);
-      const speed = secs > 0.2 ? mbReceived / secs : 0;
-      let note = total ? `${mbReceived.toFixed(0)}MB / ${mbTotal.toFixed(0)}MB` : `${mbReceived.toFixed(0)}MB`;
-      if (speed > 0.05) {
-        note += ` — ${speed.toFixed(1)} MB/s`;
-        if (total > received) {
-          const remainSec = (total - received) / (1024 * 1024) / speed;
-          note += ` — ~${Math.ceil(remainSec)}s left`;
-        }
-      }
-      progressNote.textContent = note;
-    }
-
-    const blob = new Blob(chunks);
-    downloadModelCard.dataset.busy = "0";
-    await startModelFromBlob(blob, { fromCache: false });
-  } catch (err) {
-    downloadModelCard.dataset.busy = "0";
-    console.error(err);
-    progressBar.classList.remove("indeterminate");
-    progressWrap.style.display = "none";
-    setupEl.style.display = "flex";
-    statusDot.className = "dot error";
-    statusText.textContent = "download failed";
-    alert("Failed to download model: " + (err?.message || err) + "\n\nCheck your internet connection and try again.");
-  }
-}
 
 // Check for a previously-saved model on startup — if found, load with zero prompts.
 (async function initApp() {
