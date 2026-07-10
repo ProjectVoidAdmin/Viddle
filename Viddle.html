@@ -339,6 +339,11 @@ const wllamaReadyPromise = (async () => {
 })();
 
 const MODEL_LABEL = "Qwen2.5 1.5B";
+// If a file with this exact name sits in the same folder as this HTML file
+// (same origin/path it's served from), it's fetched and loaded automatically
+// on startup — no manual picking needed. Rename this if your file is named
+// differently.
+const AUTO_GGUF_FILENAME = "qwen2.5-1.5b-instruct-q4_k_m.gguf";
 const DB_NAME = "viddle-model-store";
 const DB_STORE = "models";
 const DB_KEY = "gguf-1.5b";
@@ -455,12 +460,84 @@ changeModelBtn.addEventListener("click", async () => {
   location.reload();
 });
 
-// Check for a previously-saved model on startup — if found, load with zero prompts.
+// Tries to fetch a .gguf file sitting next to this HTML file (same folder,
+// same origin) and load it automatically. Returns true if it found and started
+// loading one, false if no such file exists here (so the caller can fall back
+// to the manual picker without treating a 404 as an error).
+async function tryAutoLoadLocalModel() {
+  await wllamaReadyPromise;
+  const url = new URL(AUTO_GGUF_FILENAME, location.href).href;
+  let res;
+  try {
+    res = await fetch(url);
+  } catch {
+    return false; // network/file:// access issue — silently fall back to picker
+  }
+  if (!res.ok) return false; // not found next to the page — fall back to picker
+
+  setupEl.style.display = "none";
+  progressWrap.style.display = "block";
+  statusDot.className = "dot loading";
+  statusText.textContent = "loading model";
+  progressBar.classList.remove("indeterminate");
+  progressBar.style.width = "0%";
+  progressPct.textContent = "0%";
+  progressMsg.textContent = "Found " + AUTO_GGUF_FILENAME + " — loading it automatically…";
+  progressNote.textContent = "";
+  progressDebug.textContent = "";
+
+  const startedAt = Date.now();
+  let lastUiUpdate = 0;
+  const total = Number(res.headers.get("content-length")) || 0;
+  const reader = res.body.getReader();
+  const chunks = [];
+  let received = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    received += value.length;
+
+    const now = Date.now();
+    if (now - lastUiUpdate < 150 && received < total) continue;
+    lastUiUpdate = now;
+
+    const pct = total ? Math.floor((received / total) * 100) : 0;
+    progressBar.style.width = pct + "%";
+    progressPct.textContent = total ? pct + "%" : "";
+    if (!total) progressBar.classList.add("indeterminate");
+
+    const secs = (now - startedAt) / 1000;
+    const mbReceived = received / (1024 * 1024);
+    const mbTotal = total / (1024 * 1024);
+    const speed = secs > 0.2 ? mbReceived / secs : 0;
+    let note = total ? `${mbReceived.toFixed(0)}MB / ${mbTotal.toFixed(0)}MB` : `${mbReceived.toFixed(0)}MB`;
+    if (speed > 0.05) {
+      note += ` — ${speed.toFixed(1)} MB/s`;
+      if (total > received) {
+        const remainSec = (total - received) / (1024 * 1024) / speed;
+        note += ` — ~${Math.ceil(remainSec)}s left`;
+      }
+    }
+    progressNote.textContent = note;
+  }
+
+  const blob = new Blob(chunks);
+  await startModelFromBlob(blob, { fromCache: false });
+  return true;
+}
+
+// Check for a previously-saved model first (zero prompts, loads from IndexedDB).
+// If there's none cached yet, look for a .gguf sitting next to the page and
+// load that automatically. Only if neither exists does the manual picker show.
 (async function initApp() {
   const cached = await getStoredModelBlob();
   if (cached) {
     startModelFromBlob(cached, { fromCache: true });
+    return;
   }
+  await tryAutoLoadLocalModel();
 })();
 
 resetBtn.addEventListener("click", () => {
